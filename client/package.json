@@ -1,11 +1,48 @@
 {
-  "name": "watch-party-client",
+  "name": "eneclez-watch-party",
+  "productName": "Eneclez Watch Party",
   "version": "1.0.0",
+  "description": "A private desktop watch party app for shared viewing and chat.",
+  "author": "Gerald Nuque",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.eneclez.watchparty",
+    "productName": "Eneclez Watch Party",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Eneclez Watch Party"
+    }
   },
   "devDependencies": {
-    "electron": "^39.0.0"
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12"
   }
 }
