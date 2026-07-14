@@ -1,4 +1,4 @@
-const APP_SERVER_ORIGIN = "http://localhost:3000";
+const APP_SERVER_ORIGIN = "https://eneclez-watch-party.onrender.com";
 const socket = io(APP_SERVER_ORIGIN);
 const params = new URLSearchParams(window.location.search);
 
