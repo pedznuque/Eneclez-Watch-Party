@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: eneclez-watch-party
+    env: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /

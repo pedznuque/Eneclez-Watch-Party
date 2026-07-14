@@ -16,6 +16,14 @@ const io = new Server(server, {
 
 const rooms = {};
 
+app.get("/", (req, res) => {
+    res.json({
+        ok: true,
+        name: "Eneclez Watch Party",
+        service: "watch-party-server"
+    });
+});
+
 app.get("/youtube-player.html", (req, res) => {
     res.sendFile(path.join(CLIENT_SRC_DIR, "youtube-player.html"));
 });
