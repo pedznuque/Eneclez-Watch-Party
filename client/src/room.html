@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Eneclez Watch Party Room</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/room.css">
+</head>
+<body>
+    <main class="room-shell">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">Room</p>
+                <h1>Eneclez Watch Party</h1>
+            </div>
+            <div class="room-actions">
+                <button id="copy" class="ghost-button" title="Copy room code">Copy <span id="code"></span></button>
+                <button id="leave" class="danger-button">Leave</button>
+            </div>
+        </header>
+
+        <section class="content-grid">
+            <section class="media-panel" aria-label="Media area">
+                <div class="media-toolbar is-hidden-control">
+                    <div>
+                        <p class="eyebrow">Bilibili Watch</p>
+                        <h2>Player and Browser</h2>
+                    </div>
+                    <span id="mediaStatus" class="media-status">Empty</span>
+                </div>
+
+                <div class="browser-controls is-hidden-control">
+                    <input id="mediaUrl" placeholder="Paste a Bilibili, YouTube, or Dailymotion link">
+                    <button id="loadMedia" class="primary-button">Load Player</button>
+                    <button id="addToQueue" class="ghost-button">Queue</button>
+                </div>
+
+                <div id="playerStage" class="player-stage">
+                    <div id="playerPane" class="media-container player-container is-empty">
+                        <webview
+                            id="playerWebview"
+                            src="about:blank"
+                            partition="persist:bilibili"
+                            preload="./js/youtube-adblock-preload.js"
+                            webpreferences="contextIsolation=false"
+                            allowpopups="false">
+                        </webview>
+
+                        <div id="playerEmptyState" class="player-empty-state">
+                            <div class="theater-glow" aria-hidden="true"></div>
+                            <div class="theater-screen" aria-hidden="true">
+                                <span class="theater-play-mark"></span>
+                            </div>
+                            <p class="empty-kicker">Your private theater</p>
+                            <h3>Select a video to start watching</h3>
+                            <p>Browse Bilibili, YouTube, Dailymotion, or Facebook below, then choose a supported video for everyone in the room.</p>
+                        </div>
+
+                        <div id="playerLoadingState" class="player-loading-state" hidden>
+                            <span class="player-loading-spinner" aria-hidden="true"></span>
+                            <strong>Loading video</strong>
+                            <small>Preparing the player for everyone in the room.</small>
+                        </div>
+
+                        <button id="playerFullscreen" class="player-fullscreen-button" title="Enter fullscreen" aria-label="Enter fullscreen">
+                            <span class="fullscreen-icon" aria-hidden="true"></span>
+                        </button>
+                    </div>
+
+                    <div id="playerControls" class="player-controls">
+                        <div class="player-control-row">
+                            <button id="playPause" class="play-toggle" disabled title="Play" aria-label="Play">
+                                <span id="playPauseIcon" class="play-pause-icon" aria-hidden="true"></span>
+                            </button>
+                            <button id="stopPlayer" class="stop-toggle" disabled title="Stop video" aria-label="Stop video">
+                                <span class="stop-icon" aria-hidden="true"></span>
+                            </button>
+                            <span id="playbackTime" class="playback-time">00:00 / 00:00</span>
+                            <label class="quality-control" title="Video quality">
+                                <span>Quality</span>
+                                <select id="qualitySelect" disabled aria-label="Video quality">
+                                    <option value="auto">Auto</option>
+                                    <option value="360">360p</option>
+                                    <option value="480">480p</option>
+                                    <option value="720">720p</option>
+                                    <option value="1080">1080p</option>
+                                </select>
+                            </label>
+                            <label class="volume-control" title="Volume">
+                                <svg class="volume-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M4 9.5v5h4.25L14 19V5L8.25 9.5H4z" />
+                                    <path d="M17.25 8.25a5.2 5.2 0 0 1 0 7.5" />
+                                    <path d="M19.8 5.7a8.75 8.75 0 0 1 0 12.6" />
+                                </svg>
+                                <input id="volumeControl" class="volume-slider" type="range" min="0" max="100" value="100" step="1" aria-label="Volume">
+                            </label>
+                            <span id="hostBadge" class="host-badge">Waiting for host</span>
+                            <button id="cleanPlayer" class="ghost-button is-hidden-control">Clean Player</button>
+                        </div>
+                        <div class="progress-shell">
+                            <input id="playbackProgress" class="playback-progress" type="range" min="0" max="1000" value="0" step="1" disabled aria-label="Video progress">
+                        </div>
+                    </div>
+
+                    <div id="fullscreenChat" class="fullscreen-chat" aria-label="Fullscreen chat" hidden>
+                        <div id="fullscreenMessages" class="fullscreen-messages" aria-live="polite"></div>
+                        <form id="fullscreenSend" class="fullscreen-send">
+                            <button id="fullscreenEffectToggle" class="fullscreen-effect-toggle" type="button" aria-expanded="false" title="Show effects" aria-label="Show effects">
+                                <svg class="fullscreen-fx-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path class="fullscreen-fx-spark fullscreen-fx-spark-large" d="M12 3.5 14.25 9.75 20.5 12 14.25 14.25 12 20.5 9.75 14.25 3.5 12 9.75 9.75 12 3.5z" />
+                                    <path class="fullscreen-fx-spark fullscreen-fx-spark-small" d="M19 2.75 19.85 5.15 22.25 6 19.85 6.85 19 9.25 18.15 6.85 15.75 6 18.15 5.15 19 2.75z" />
+                                    <path class="fullscreen-fx-spark fullscreen-fx-spark-dot" d="M5 15.75 5.75 18 8 18.75 5.75 19.5 5 21.75 4.25 19.5 2 18.75 4.25 18 5 15.75z" />
+                                </svg>
+                            </button>
+                            <div id="fullscreenEffectTray" class="fullscreen-effect-tray" aria-label="Fullscreen effects" hidden>
+                                <button class="fullscreen-effect-button" type="button" data-effect="heart" title="Send heart">
+                                    <svg class="fullscreen-effect-icon fullscreen-effect-icon-heart" viewBox="0 0 32 32" aria-hidden="true">
+                                        <path d="M16 27s-10.5-6.5-12.8-14.1C1.7 7.8 5 4 9.3 4c2.6 0 4.7 1.4 6.7 4 2-2.6 4.1-4 6.7-4C27 4 30.3 7.8 28.8 12.9 26.5 20.5 16 27 16 27z" />
+                                    </svg>
+                                    <span>Heart</span>
+                                </button>
+                                <button class="fullscreen-effect-button" type="button" data-effect="cat" title="Send cat">
+                                    <svg class="fullscreen-effect-icon fullscreen-effect-icon-cat" viewBox="0 0 32 32" aria-hidden="true">
+                                        <path d="M7 14 5.5 5.5 13 10h6l7.5-4.5L25 14c1.4 1.5 2 3.3 2 5.2 0 5-4.7 8.8-11 8.8S5 24.2 5 19.2C5 17.3 5.6 15.5 7 14z" />
+                                        <circle cx="12" cy="18" r="1.3" />
+                                        <circle cx="20" cy="18" r="1.3" />
+                                        <path d="M14 22c1.2 1 2.8 1 4 0" />
+                                    </svg>
+                                    <span>Cat</span>
+                                </button>
+                                <button class="fullscreen-effect-button" type="button" data-effect="star" title="Send star">
+                                    <svg class="fullscreen-effect-icon fullscreen-effect-icon-star" viewBox="0 0 32 32" aria-hidden="true">
+                                        <path d="M16 3.8 19.6 11.5 28 12.6 21.8 18.4 23.4 26.8 16 22.6 8.6 26.8 10.2 18.4 4 12.6 12.4 11.5 16 3.8z" />
+                                    </svg>
+                                    <span>Star</span>
+                                </button>
+                                <button class="fullscreen-effect-button" type="button" data-effect="bolt" title="Send bolt">
+                                    <svg class="fullscreen-effect-icon fullscreen-effect-icon-bolt" viewBox="0 0 32 32" aria-hidden="true">
+                                        <path d="M18.5 3 7.5 17.2h7.1L12.4 29 24.8 12.9h-7.4L18.5 3z" />
+                                    </svg>
+                                    <span>Bolt</span>
+                                </button>
+                            </div>
+                            <input id="fullscreenMessage" maxlength="500" placeholder="Message everyone" autocomplete="off">
+                            <button id="fullscreenSendButton" type="submit">Send</button>
+                        </form>
+                    </div>
+                    <div id="fullscreenEffects" class="fullscreen-effects" aria-hidden="true"></div>
+                    <button id="fullscreenChatToggle" class="fullscreen-chat-toggle" type="button" aria-pressed="true" aria-label="Hide chat" hidden>
+                        <svg class="fullscreen-chat-control-icon fullscreen-chat-open-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M5 6.5h14a2 2 0 0 1 2 2v6.2a2 2 0 0 1-2 2H9.2L5 20v-3.3a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2z" />
+                            <path d="M8 10h8" />
+                            <path d="M8 13h5" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="media-section-header browser-header">
+                    <div class="browser-site-toggle" aria-label="Browser site">
+                        <button id="browseBilibili" class="browser-site-option is-active" type="button">Bilibili</button>
+                        <button id="browseYoutube" class="browser-site-option" type="button">YouTube</button>
+                        <button id="browseDailymotion" class="browser-site-option" type="button">Dailymotion</button>
+                        <button id="browseFacebook" class="browser-site-option" type="button">Facebook</button>
+                    </div>
+                    <div class="browser-nav" aria-label="Browser navigation">
+                        <button id="browserBack" class="icon-button" title="Back" aria-label="Back">&#8592;</button>
+                        <button id="browserForward" class="icon-button" title="Forward" aria-label="Forward">&#8594;</button>
+                        <button id="browserReload" class="icon-button" title="Reload" aria-label="Reload">&#8635;</button>
+                    </div>
+                </div>
+
+                <div id="browserPane" class="media-container browser-container">
+                    <webview
+                        id="browserWebview"
+                        src="https://www.bilibili.tv/en"
+                        partition="persist:bilibili-browser"
+                        preload="./js/youtube-adblock-preload.js"
+                        webpreferences="contextIsolation=false"
+                        allowpopups="true">
+                    </webview>
+                </div>
+            </section>
+
+            <aside class="side-panel">
+                <section class="panel guests-panel">
+                    <div class="panel-heading">
+                        <h2>People in this room</h2>
+                        <span id="guestCount">0</span>
+                    </div>
+                    <div id="connection" class="connection is-connecting" hidden>Connecting</div>
+                    <div id="users" class="users"></div>
+                </section>
+
+                <section class="panel queue-panel">
+                    <div class="panel-heading">
+                        <h2>Watch Queue</h2>
+                        <span id="queueCount">0</span>
+                    </div>
+                    <div id="queueList" class="queue-list">
+                        <p class="empty-queue">No videos queued yet.</p>
+                    </div>
+                </section>
+
+                <section class="chat-panel">
+                    <div class="panel-heading">
+                        <h2>Chat</h2>
+                    </div>
+                    <div id="messages" class="messages" aria-live="polite"></div>
+                    <p id="typing" class="typing"></p>
+                    <div class="send">
+                        <input id="message" maxlength="500" placeholder="Message everyone" autocomplete="off">
+                        <button id="send" class="primary-button">Send</button>
+                    </div>
+                </section>
+            </aside>
+        </section>
+    </main>
+
+    <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+    <script src="js/room.js"></script>
+</body>
+</html>

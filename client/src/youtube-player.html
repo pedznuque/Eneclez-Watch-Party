@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>YouTube Player</title>
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #player {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        iframe {
+            width: 100vw !important;
+            height: 100vh !important;
+            border: 0;
+            display: block;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="player"></div>
+
+    <script>
+        const params = new URLSearchParams(location.search);
+        const videoId = params.get("videoId") || "";
+        let player = null;
+        let ready = false;
+        let lastState = -1;
+        let currentVolume = 100;
+
+        const asNumber = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+
+        window.watchPartyPlayer = {
+            getState() {
+                if (!player || !ready) {
+                    return {
+                        currentTime: 0,
+                        duration: 0,
+                        paused: true,
+                        ended: false,
+                        ready: false
+                    };
+                }
+
+                const state = typeof player.getPlayerState === "function"
+                    ? player.getPlayerState()
+                    : lastState;
+
+                return {
+                    currentTime: asNumber(player.getCurrentTime?.()),
+                    duration: asNumber(player.getDuration?.()),
+                    paused: state !== 1,
+                    ended: state === 0,
+                    volume: currentVolume,
+                    ready: true
+                };
+            },
+
+            setVolume(volume) {
+                currentVolume = Math.max(0, Math.min(100, Math.round(Number(volume) || 0)));
+                if (player && ready) {
+                    player.setVolume?.(currentVolume);
+                    if (currentVolume > 0) player.unMute?.();
+                    if (currentVolume <= 0) player.mute?.();
+                }
+            },
+
+            async setPaused(paused) {
+                if (!player || !ready) return this.getState();
+
+                if (paused) {
+                    player.pauseVideo?.();
+                } else {
+                    this.setVolume(currentVolume);
+                    player.playVideo?.();
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 120));
+                return this.getState();
+            },
+
+            async seekTo(seconds, resume) {
+                if (!player || !ready) return this.getState();
+
+                player.seekTo?.(Math.max(0, asNumber(seconds)), true);
+
+                if (resume) {
+                    this.setVolume(currentVolume);
+                    player.playVideo?.();
+                } else {
+                    player.pauseVideo?.();
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 120));
+                return this.getState();
+            }
+        };
+
+        window.onYouTubeIframeAPIReady = () => {
+            player = new YT.Player("player", {
+                width: "100%",
+                height: "100%",
+                videoId,
+                playerVars: {
+                    autoplay: 1,
+                    controls: 0,
+                    disablekb: 1,
+                    fs: 0,
+                    iv_load_policy: 3,
+                    modestbranding: 1,
+                    origin: window.location.origin,
+                    playsinline: 1,
+                    rel: 0
+                },
+                events: {
+                    onReady(event) {
+                        ready = true;
+                        event.target.unMute();
+                        event.target.setVolume(currentVolume);
+                    },
+                    onStateChange(event) {
+                        lastState = event.data;
+                    }
+                }
+            });
+        };
+
+        const script = document.createElement("script");
+        script.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(script);
+    </script>
+</body>
+</html>
