@@ -17,6 +17,9 @@ const micToggleButton = document.getElementById("micToggle");
 const micLeaveButton = document.getElementById("micLeave");
 const micToggleTextEl = document.getElementById("micToggleText");
 const micCallCountEl = document.getElementById("micCallCount");
+const fullscreenMicToggleButton = document.getElementById("fullscreenMicToggle");
+const fullscreenMicLeaveButton = document.getElementById("fullscreenMicLeave");
+const fullscreenMicCountEl = document.getElementById("fullscreenMicCount");
 const voiceAudioDockEl = document.getElementById("voiceAudioDock");
 const messagesEl = document.getElementById("messages");
 let messageInput = document.getElementById("message");
@@ -155,6 +158,7 @@ document.addEventListener("keydown", event => {
 function updateMicButton() {
     if (!micToggleButton || !micToggleTextEl) return;
     const callCount = activeVoiceUsers.size;
+    const callCountText = callCount === 1 ? "1 in call" : `${callCount} in call`;
 
     micToggleButton.classList.toggle("is-live", isMicJoined && !isMicMuted);
     micToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
@@ -169,8 +173,27 @@ function updateMicButton() {
         micLeaveButton.hidden = !isMicJoined;
     }
     if (micCallCountEl) {
-        micCallCountEl.textContent = callCount === 1 ? "1 in call" : `${callCount} in call`;
+        micCallCountEl.textContent = callCountText;
         micCallCountEl.hidden = !isMicJoined && callCount === 0;
+    }
+    if (fullscreenMicToggleButton) {
+        fullscreenMicToggleButton.classList.toggle("is-live", isMicJoined && !isMicMuted);
+        fullscreenMicToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
+        fullscreenMicToggleButton.classList.toggle("has-callers", callCount > 0);
+        fullscreenMicToggleButton.setAttribute("aria-pressed", String(isMicJoined && !isMicMuted));
+        fullscreenMicToggleButton.title = isMicJoined
+            ? (isMicMuted ? "Unmute mic" : "Mute mic")
+            : callCount > 0
+                ? `Join mic: ${callCountText}`
+                : "Join mic";
+        fullscreenMicToggleButton.setAttribute("aria-label", fullscreenMicToggleButton.title);
+    }
+    if (fullscreenMicLeaveButton) {
+        fullscreenMicLeaveButton.hidden = !isMicJoined;
+    }
+    if (fullscreenMicCountEl) {
+        fullscreenMicCountEl.textContent = String(callCount);
+        fullscreenMicCountEl.hidden = callCount === 0;
     }
 
     if (!isMicJoined) {
@@ -288,6 +311,7 @@ async function joinMic() {
     }
 
     micToggleButton.disabled = true;
+    if (fullscreenMicToggleButton) fullscreenMicToggleButton.disabled = true;
     micToggleTextEl.textContent = "Joining";
 
     try {
@@ -305,6 +329,7 @@ async function joinMic() {
             username
         }, async response => {
             micToggleButton.disabled = false;
+            if (fullscreenMicToggleButton) fullscreenMicToggleButton.disabled = false;
 
             if (!response?.ok) {
                 localMicStream?.getTracks().forEach(track => track.stop());
@@ -334,6 +359,7 @@ async function joinMic() {
         });
     } catch {
         micToggleButton.disabled = false;
+        if (fullscreenMicToggleButton) fullscreenMicToggleButton.disabled = false;
         localMicStream = null;
         addSystemMessage("Microphone permission was blocked or unavailable.");
         updateMicButton();
@@ -385,6 +411,21 @@ micToggleButton?.addEventListener("click", () => {
 micLeaveButton?.addEventListener("click", () => {
     leaveMic();
 });
+
+fullscreenMicToggleButton?.addEventListener("click", () => {
+    if (!isMicJoined) {
+        joinMic();
+        return;
+    }
+
+    setMicMuted(!isMicMuted);
+});
+
+fullscreenMicLeaveButton?.addEventListener("click", () => {
+    leaveMic();
+});
+
+updateMicButton();
 
 window.addEventListener("beforeunload", () => {
     leaveMic(false);
@@ -1223,7 +1264,7 @@ function addSystemMessage(message) {
 let effectAudioContext = null;
 let effectImpactTimer = null;
 let effectImpactReleaseTimer = null;
-const EFFECT_IMPACT_DELAY_MS = 1180;
+const EFFECT_IMPACT_DELAY_MS = 1060;
 
 function getEffectAudioContext() {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
@@ -1340,7 +1381,7 @@ function playPremiumEffectSound(effectType) {
     const isBolt = effectType === "bolt";
     const isStar = effectType === "star";
     const bus = createPremiumEffectBus(ctx, startAt);
-    const impactAt = startAt + 1.13;
+    const impactAt = startAt + 1.04;
     const base = isBolt ? 520 : isCat ? 330 : isStar ? 480 : 430;
     const sparkleBase = isBolt ? 1740 : isCat ? 980 : isStar ? 1560 : 1320;
 
