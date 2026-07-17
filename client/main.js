@@ -1,7 +1,10 @@
-const { app, BrowserWindow, Menu, ipcMain, webContents } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, webContents } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 
 let activeChatWebContentsId = null;
+let mainWindow = null;
+let updatePromptOpen = false;
 const protectedSessions = new Set();
 
 const BLOCKED_REQUEST_HOSTS = [
@@ -110,6 +113,47 @@ function isAllowedPopup(url) {
  }
 }
 
+function setupAutoUpdates() {
+ if (!app.isPackaged) return;
+
+ autoUpdater.autoDownload = true;
+ autoUpdater.autoInstallOnAppQuit = true;
+
+ autoUpdater.on("update-downloaded", async info => {
+  if (updatePromptOpen) return;
+
+  updatePromptOpen = true;
+  const result = await dialog.showMessageBox(mainWindow, {
+   type: "info",
+   buttons: ["Restart now", "Later"],
+   defaultId: 0,
+   cancelId: 1,
+   title: "Update ready",
+   message: `Eneclez Watch Party ${info.version} is ready.`,
+   detail: "Restart the app to install the new version."
+  });
+  updatePromptOpen = false;
+
+  if (result.response === 0) {
+   autoUpdater.quitAndInstall(false, true);
+  }
+ });
+
+ autoUpdater.on("error", error => {
+  console.warn("Update check failed:", error?.message || error);
+ });
+}
+
+function checkForUpdatesSoon() {
+ if (!app.isPackaged) return;
+
+ setTimeout(() => {
+  autoUpdater.checkForUpdates().catch(error => {
+   console.warn("Update check failed:", error?.message || error);
+  });
+ }, 4000);
+}
+
 app.on("web-contents-created", (_event, contents) => {
  protectSession(contents.session);
  contents.setWindowOpenHandler(({ url }) => ({
@@ -160,8 +204,9 @@ app.on("web-contents-created", (_event, contents) => {
 
 app.whenReady().then(() => {
  Menu.setApplicationMenu(null);
+ setupAutoUpdates();
 
- const win = new BrowserWindow({
+ mainWindow = new BrowserWindow({
   width: 1200,
   height: 750,
   autoHideMenuBar: true,
@@ -170,6 +215,7 @@ app.whenReady().then(() => {
    webviewTag: true
   }
  });
- win.setMenu(null);
- win.loadFile("src/index.html");
+ mainWindow.setMenu(null);
+ mainWindow.loadFile("src/index.html");
+ mainWindow.webContents.once("did-finish-load", checkForUpdatesSoon);
 });

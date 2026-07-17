@@ -16,6 +16,13 @@
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "pedznuque",
+        "repo": "Eneclez-Watch-Party"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -31,7 +38,7 @@
           ]
         }
       ],
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "artifactName": "Eneclez-Watch-Party-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -44,5 +51,8 @@
   "devDependencies": {
     "electron": "^39.0.0",
     "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

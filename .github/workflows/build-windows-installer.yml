@@ -53,6 +53,7 @@ jobs:
           path: |
             client/dist/*.exe
             client/dist/*.blockmap
+            client/dist/latest.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -66,4 +67,13 @@ jobs:
           if (-not $installer) {
             throw "No installer .exe found in client/dist"
           }
-          gh release upload "$env:RELEASE_TAG" "$($installer.FullName)" --clobber
+          $assets = @($installer.FullName)
+          $latest = Get-ChildItem -Path "dist" -Filter "latest.yml" | Select-Object -First 1
+          if ($latest) {
+            $assets += $latest.FullName
+          }
+          $blockmap = Get-ChildItem -Path "dist" -Filter "*.blockmap" | Select-Object -First 1
+          if ($blockmap) {
+            $assets += $blockmap.FullName
+          }
+          gh release upload "$env:RELEASE_TAG" $assets --clobber
