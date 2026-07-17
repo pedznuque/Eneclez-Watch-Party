@@ -373,7 +373,7 @@ io.on("connection", socket => {
         rooms[room].playbackState = createPlaybackState({
             currentTime: 0,
             duration: 0,
-            paused: true,
+            paused: false,
             quality: "auto"
         }, socket.data.username || cleanText(data.username, "Guest"));
 

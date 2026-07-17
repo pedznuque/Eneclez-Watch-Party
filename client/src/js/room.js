@@ -77,6 +77,7 @@ let selectedQuality = "auto";
 let lastAppliedQuality = "";
 let playerReadyCheckTimer = null;
 let playerLoadingReleaseTimer = null;
+let playerAutoplayTimers = [];
 let playerLoadingStartedAt = 0;
 let playerResizeFrame = null;
 let browserResizeFrame = null;
@@ -671,6 +672,7 @@ async function isFacebookLoginWall() {
 
 function waitForPlayerReady() {
     clearInterval(playerReadyCheckTimer);
+    clearPlayerAutoplayNudges();
     setPlayerLoading(true);
 
     const youtubeLoad = isYoutubeUrl(selectedVideoUrl || playerWebview.src || "");
@@ -683,6 +685,7 @@ function waitForPlayerReady() {
         playerLoadingReleaseTimer = null;
         setPlayerLoading(false);
         setMediaStatus("Ready", "is-online");
+        schedulePlayerAutoplayNudge();
     };
 
     if (youtubeLoad) {
@@ -749,6 +752,41 @@ function waitForPlayerReady() {
             finishReady();
         }
     }, lightYoutubePlayer ? 320 : 180);
+}
+
+function clearPlayerAutoplayNudges() {
+    playerAutoplayTimers.forEach(timer => clearTimeout(timer));
+    playerAutoplayTimers = [];
+}
+
+function schedulePlayerAutoplayNudge() {
+    clearPlayerAutoplayNudges();
+
+    if (!canControlPlayer() || playerWebview.src === "about:blank") return;
+
+    const delays = [120, 650, 1400];
+    delays.forEach(delay => {
+        const timer = setTimeout(async () => {
+            if (!canControlPlayer() || applyingRemotePlayback || playerWebview.src === "about:blank") return;
+
+            const state = await readPlaybackState();
+
+            if (!state || state.ended || state.paused === false) return;
+
+            const nextState = await setPlayerPaused(false);
+
+            if (nextState) {
+                lastPlaybackState = withLocalSyncState({
+                    ...nextState,
+                    paused: false,
+                    updatedAt: Date.now()
+                });
+                updatePlaybackTime(getDisplayPlaybackState(lastPlaybackState));
+                emitHostPlaybackState(false);
+            }
+        }, delay);
+        playerAutoplayTimers.push(timer);
+    });
 }
 
 async function hasPlayerVideoWithData() {
