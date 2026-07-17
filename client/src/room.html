@@ -210,11 +210,17 @@
                 <section class="chat-panel">
                     <div class="panel-heading chat-heading">
                         <h2>Chat</h2>
-                        <button id="peopleToggle" class="people-toggle" type="button" aria-expanded="false" aria-controls="peoplePopover">
-                            <span class="people-toggle-icon" aria-hidden="true"></span>
-                            <span>People</span>
-                            <strong id="guestCount">0</strong>
-                        </button>
+                        <div class="chat-heading-actions">
+                            <button id="micToggle" class="mic-toggle" type="button" aria-pressed="false">
+                                <span class="mic-toggle-icon" aria-hidden="true"></span>
+                                <span id="micToggleText">Join Mic</span>
+                            </button>
+                            <button id="peopleToggle" class="people-toggle" type="button" aria-expanded="false" aria-controls="peoplePopover">
+                                <span class="people-toggle-icon" aria-hidden="true"></span>
+                                <span>People</span>
+                                <strong id="guestCount">0</strong>
+                            </button>
+                        </div>
                     </div>
                     <div id="connection" class="connection is-connecting" hidden>Connecting</div>
                     <div id="peoplePopover" class="people-popover" hidden>
@@ -227,6 +233,7 @@
                         </div>
                         <div id="users" class="users people-list"></div>
                     </div>
+                    <div id="voiceAudioDock" class="voice-audio-dock" aria-hidden="true"></div>
                     <div id="messages" class="messages" aria-live="polite"></div>
                     <p id="typing" class="typing"></p>
                     <div class="send">

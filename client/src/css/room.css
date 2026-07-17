@@ -4029,6 +4029,13 @@ body.chat-input-active #browserWebview {
     gap: 10px;
 }
 
+.chat-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mic-toggle,
 .people-toggle {
     min-height: 34px;
     display: inline-flex;
@@ -4043,11 +4050,66 @@ body.chat-input-active #browserWebview {
     font-weight: 900;
 }
 
+.mic-toggle:hover,
+.mic-toggle.is-live,
 .people-toggle:hover,
 .people-toggle[aria-expanded="true"] {
     color: var(--text);
     border-color: rgba(67, 198, 172, .32);
     background: rgba(67, 198, 172, .12);
+}
+
+.mic-toggle.is-live {
+    color: #07110f;
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+}
+
+.mic-toggle.is-muted {
+    color: #fff;
+    border-color: rgba(239, 71, 111, .28);
+    background: rgba(239, 71, 111, .16);
+}
+
+.mic-toggle-icon {
+    position: relative;
+    width: 14px;
+    height: 18px;
+    display: inline-block;
+}
+
+.mic-toggle-icon::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 0;
+    width: 8px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-radius: 999px;
+}
+
+.mic-toggle-icon::after {
+    content: "";
+    position: absolute;
+    left: 1px;
+    bottom: 0;
+    width: 12px;
+    height: 9px;
+    border: 2px solid currentColor;
+    border-top: 0;
+    border-radius: 0 0 999px 999px;
+    box-shadow: inset 0 -5px 0 -3px currentColor;
+}
+
+.mic-toggle.is-muted .mic-toggle-icon {
+    transform: rotate(-12deg);
+}
+
+.mic-toggle.is-muted .mic-toggle-icon::after {
+    box-shadow:
+        inset 0 -5px 0 -3px currentColor,
+        0 -9px 0 -5px currentColor;
 }
 
 .people-toggle-icon {
@@ -4188,6 +4250,26 @@ body.chat-input-active #browserWebview {
 
 #users.people-list .user {
     min-height: 46px !important;
+}
+
+.voice-audio-dock {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+@media (max-width: 560px) {
+    .chat-heading {
+        align-items: flex-start;
+    }
+
+    .chat-heading-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
 }
 
 @media (max-height: 760px) {

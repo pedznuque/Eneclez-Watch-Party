@@ -127,6 +127,7 @@ function createRoomState(host) {
     return {
         host,
         users: new Map(),
+        voiceUsers: new Map(),
         controllers: new Set(),
         queue: [],
         currentMedia: null,
@@ -180,6 +181,11 @@ function leaveCurrentRoom(socket) {
     if (!room || !rooms[room]) return;
 
     rooms[room].users.delete(socket.id);
+    rooms[room].voiceUsers?.delete(socket.id);
+    socket.to(room).emit("voicePeerLeft", {
+        id: socket.id,
+        username
+    });
     if (username) {
         rooms[room].controllers?.delete(username);
     }
@@ -286,6 +292,77 @@ io.on("connection", socket => {
         if (rooms[room]) {
             socket.to(room).emit("typing", { username });
         }
+    });
+
+    socket.on("voiceJoin", (data, reply) => {
+        const room = cleanText(data.room || socket.data.room);
+        const username = cleanText(data.username || socket.data.username, "Guest");
+        const respond = payload => {
+            if (typeof reply === "function") reply(payload);
+        };
+
+        if (!rooms[room] || socket.data.room !== room) {
+            respond({ ok: false, message: "Join the room before joining mic." });
+            return;
+        }
+
+        rooms[room].voiceUsers.set(socket.id, {
+            id: socket.id,
+            username,
+            muted: false
+        });
+
+        const peers = Array.from(rooms[room].voiceUsers.values())
+            .filter(peer => peer.id !== socket.id);
+
+        respond({ ok: true, id: socket.id, peers });
+        socket.to(room).emit("voicePeerJoined", {
+            id: socket.id,
+            username,
+            muted: false
+        });
+    });
+
+    socket.on("voiceSignal", data => {
+        const room = cleanText(data.room || socket.data.room);
+        const target = cleanText(data.target, "", 120);
+        const signal = data.signal;
+
+        if (!rooms[room] || socket.data.room !== room || !target || !signal) return;
+
+        socket.to(target).emit("voiceSignal", {
+            from: socket.id,
+            username: socket.data.username,
+            signal
+        });
+    });
+
+    socket.on("voiceMute", data => {
+        const room = cleanText(data.room || socket.data.room);
+        const muted = Boolean(data.muted);
+        const peer = rooms[room]?.voiceUsers?.get(socket.id);
+
+        if (!peer) return;
+
+        peer.muted = muted;
+        socket.to(room).emit("voicePeerMuted", {
+            id: socket.id,
+            username: peer.username,
+            muted
+        });
+    });
+
+    socket.on("voiceLeave", data => {
+        const room = cleanText(data.room || socket.data.room);
+        const peer = rooms[room]?.voiceUsers?.get(socket.id);
+
+        if (!peer) return;
+
+        rooms[room].voiceUsers.delete(socket.id);
+        socket.to(room).emit("voicePeerLeft", {
+            id: socket.id,
+            username: peer.username
+        });
     });
 
     socket.on("playerEffect", data => {

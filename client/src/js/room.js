@@ -13,6 +13,9 @@ const usersEl = document.getElementById("users");
 const peopleToggleButton = document.getElementById("peopleToggle");
 const peoplePopoverEl = document.getElementById("peoplePopover");
 const peopleCloseButton = document.getElementById("peopleClose");
+const micToggleButton = document.getElementById("micToggle");
+const micToggleTextEl = document.getElementById("micToggleText");
+const voiceAudioDockEl = document.getElementById("voiceAudioDock");
 const messagesEl = document.getElementById("messages");
 let messageInput = document.getElementById("message");
 const typingEl = document.getElementById("typing");
@@ -98,7 +101,18 @@ let lastPlaybackProgressFill = "";
 let lastPlaybackPausedState = null;
 let selectedVolume = Number(localStorage.getItem("watchPartyVolume") || 100);
 let roomHasJoined = false;
+let localMicStream = null;
+let isMicJoined = false;
+let isMicMuted = false;
+let ownVoiceId = "";
+const voicePeers = new Map();
 const FULLSCREEN_EFFECT_TYPES = ["heart", "cat", "star", "bolt"];
+const VOICE_RTC_CONFIG = {
+    iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" }
+    ]
+};
 
 const BILIBILI_HOME = "https://www.bilibili.tv/en";
 const YOUTUBE_HOME = "https://www.youtube.com/";
@@ -133,6 +147,215 @@ document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
         setPeoplePopoverVisible(false);
     }
+});
+
+function updateMicButton() {
+    if (!micToggleButton || !micToggleTextEl) return;
+
+    micToggleButton.classList.toggle("is-live", isMicJoined && !isMicMuted);
+    micToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
+    micToggleButton.setAttribute("aria-pressed", String(isMicJoined && !isMicMuted));
+    micToggleButton.title = isMicJoined
+        ? "Click to mute or unmute. Double-click to leave mic."
+        : "Join voice chat";
+
+    if (!isMicJoined) {
+        micToggleTextEl.textContent = "Join Mic";
+    } else {
+        micToggleTextEl.textContent = isMicMuted ? "Unmute" : "Mute";
+    }
+}
+
+function createRemoteAudio(peerId, stream) {
+    if (!voiceAudioDockEl) return;
+
+    let audio = document.getElementById(`voiceAudio-${peerId}`);
+    if (!audio) {
+        audio = document.createElement("audio");
+        audio.id = `voiceAudio-${peerId}`;
+        audio.autoplay = true;
+        audio.playsInline = true;
+        voiceAudioDockEl.appendChild(audio);
+    }
+
+    audio.srcObject = stream;
+    audio.play?.().catch(() => {});
+}
+
+function closeVoicePeer(peerId) {
+    const peer = voicePeers.get(peerId);
+    if (peer) {
+        peer.connection.close();
+        voicePeers.delete(peerId);
+    }
+
+    document.getElementById(`voiceAudio-${peerId}`)?.remove();
+}
+
+function closeAllVoicePeers() {
+    Array.from(voicePeers.keys()).forEach(closeVoicePeer);
+}
+
+function createVoicePeer(peerId, peerUsername = "Guest") {
+    if (!localMicStream || voicePeers.has(peerId)) {
+        return voicePeers.get(peerId)?.connection || null;
+    }
+
+    const connection = new RTCPeerConnection(VOICE_RTC_CONFIG);
+    voicePeers.set(peerId, {
+        connection,
+        username: peerUsername
+    });
+
+    localMicStream.getTracks().forEach(track => {
+        connection.addTrack(track, localMicStream);
+    });
+
+    connection.onicecandidate = event => {
+        if (!event.candidate) return;
+
+        socket.emit("voiceSignal", {
+            room: roomCode,
+            target: peerId,
+            signal: {
+                type: "candidate",
+                candidate: event.candidate
+            }
+        });
+    };
+
+    connection.ontrack = event => {
+        const [stream] = event.streams;
+        if (stream) {
+            createRemoteAudio(peerId, stream);
+        }
+    };
+
+    connection.onconnectionstatechange = () => {
+        if (["closed", "failed", "disconnected"].includes(connection.connectionState)) {
+            closeVoicePeer(peerId);
+        }
+    };
+
+    return connection;
+}
+
+async function sendVoiceOffer(peerId, peerUsername) {
+    const connection = createVoicePeer(peerId, peerUsername);
+    if (!connection) return;
+
+    const offer = await connection.createOffer({
+        offerToReceiveAudio: true
+    });
+    await connection.setLocalDescription(offer);
+
+    socket.emit("voiceSignal", {
+        room: roomCode,
+        target: peerId,
+        signal: connection.localDescription
+    });
+}
+
+async function joinMic() {
+    if (isMicJoined) return;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+        addSystemMessage("Microphone is not available in this browser.");
+        return;
+    }
+
+    micToggleButton.disabled = true;
+    micToggleTextEl.textContent = "Joining";
+
+    try {
+        localMicStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: false
+        });
+
+        socket.emit("voiceJoin", {
+            room: roomCode,
+            username
+        }, async response => {
+            micToggleButton.disabled = false;
+
+            if (!response?.ok) {
+                localMicStream?.getTracks().forEach(track => track.stop());
+                localMicStream = null;
+                addSystemMessage(response?.message || "Could not join mic.");
+                updateMicButton();
+                return;
+            }
+
+            isMicJoined = true;
+            isMicMuted = false;
+            ownVoiceId = response.id || "";
+            updateMicButton();
+            addSystemMessage(`${username} joined mic.`);
+
+            for (const peer of response.peers || []) {
+                await sendVoiceOffer(peer.id, peer.username).catch(() => {});
+            }
+        });
+    } catch {
+        micToggleButton.disabled = false;
+        localMicStream = null;
+        addSystemMessage("Microphone permission was blocked or unavailable.");
+        updateMicButton();
+    }
+}
+
+function setMicMuted(muted) {
+    if (!localMicStream) return;
+
+    isMicMuted = muted;
+    localMicStream.getAudioTracks().forEach(track => {
+        track.enabled = !muted;
+    });
+    socket.emit("voiceMute", {
+        room: roomCode,
+        muted
+    });
+    updateMicButton();
+}
+
+function leaveMic(shouldNotify = true) {
+    if (!isMicJoined && !localMicStream) return;
+
+    socket.emit("voiceLeave", { room: roomCode });
+    localMicStream?.getTracks().forEach(track => track.stop());
+    localMicStream = null;
+    isMicJoined = false;
+    isMicMuted = false;
+    ownVoiceId = "";
+    closeAllVoicePeers();
+    updateMicButton();
+
+    if (shouldNotify) {
+        addSystemMessage(`${username} left mic.`);
+    }
+}
+
+micToggleButton?.addEventListener("click", () => {
+    if (!isMicJoined) {
+        joinMic();
+        return;
+    }
+
+    setMicMuted(!isMicMuted);
+});
+
+micToggleButton?.addEventListener("dblclick", event => {
+    event.preventDefault();
+    leaveMic();
+});
+
+window.addEventListener("beforeunload", () => {
+    leaveMic(false);
 });
 
 function playbackClockNow() {
@@ -3431,6 +3654,8 @@ socket.on("connect", () => {
 });
 
 socket.on("disconnect", () => {
+    leaveMic(false);
+
     if (!roomHasJoined) {
         setRoomLoading(true, "Reconnecting", "Trying to reach the watch party server");
     }
@@ -3520,6 +3745,53 @@ socket.on("roomUsers", data => {
 socket.on("chat", addMessage);
 socket.on("system", addSystemMessage);
 socket.on("playerEffect", renderPlayerEffect);
+socket.on("voicePeerJoined", peer => {
+    if (!isMicJoined || !peer?.id || peer.id === ownVoiceId) return;
+
+    addSystemMessage(`${peer.username || "Guest"} joined mic.`);
+});
+socket.on("voicePeerLeft", peer => {
+    if (peer?.id) {
+        closeVoicePeer(peer.id);
+    }
+
+    if (peer?.username) {
+        addSystemMessage(`${peer.username} left mic.`);
+    }
+});
+socket.on("voicePeerMuted", peer => {
+    if (peer?.username) {
+        addSystemMessage(`${peer.username} ${peer.muted ? "muted" : "unmuted"} mic.`);
+    }
+});
+socket.on("voiceSignal", async data => {
+    if (!isMicJoined || !localMicStream || !data?.from || data.from === ownVoiceId) return;
+
+    const connection = createVoicePeer(data.from, data.username);
+    if (!connection) return;
+
+    const signal = data.signal || {};
+
+    try {
+        if (signal.type === "offer") {
+            await connection.setRemoteDescription(new RTCSessionDescription(signal));
+            const answer = await connection.createAnswer();
+            await connection.setLocalDescription(answer);
+
+            socket.emit("voiceSignal", {
+                room: roomCode,
+                target: data.from,
+                signal: connection.localDescription
+            });
+        } else if (signal.type === "answer") {
+            await connection.setRemoteDescription(new RTCSessionDescription(signal));
+        } else if (signal.type === "candidate" && signal.candidate) {
+            await connection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        }
+    } catch {
+        closeVoicePeer(data.from);
+    }
+});
 socket.on("mediaLoaded", loadBilibili);
 socket.on("mediaStopped", async data => {
     hideQueueCountdown();
