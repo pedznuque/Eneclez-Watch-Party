@@ -16,6 +16,7 @@ const peopleCloseButton = document.getElementById("peopleClose");
 const micToggleButton = document.getElementById("micToggle");
 const micLeaveButton = document.getElementById("micLeave");
 const micToggleTextEl = document.getElementById("micToggleText");
+const micCallCountEl = document.getElementById("micCallCount");
 const voiceAudioDockEl = document.getElementById("voiceAudioDock");
 const messagesEl = document.getElementById("messages");
 let messageInput = document.getElementById("message");
@@ -106,6 +107,7 @@ let localMicStream = null;
 let isMicJoined = false;
 let isMicMuted = false;
 let ownVoiceId = "";
+let activeVoiceUsers = new Map();
 const voicePeers = new Map();
 const FULLSCREEN_EFFECT_TYPES = ["heart", "cat", "star", "bolt"];
 const VOICE_RTC_CONFIG = {
@@ -152,15 +154,23 @@ document.addEventListener("keydown", event => {
 
 function updateMicButton() {
     if (!micToggleButton || !micToggleTextEl) return;
+    const callCount = activeVoiceUsers.size;
 
     micToggleButton.classList.toggle("is-live", isMicJoined && !isMicMuted);
     micToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
+    micToggleButton.classList.toggle("has-callers", callCount > 0);
     micToggleButton.setAttribute("aria-pressed", String(isMicJoined && !isMicMuted));
     micToggleButton.title = isMicJoined
         ? "Mute or unmute mic"
-        : "Join voice chat";
+        : callCount > 0
+            ? `${callCount} ${callCount === 1 ? "person is" : "people are"} in the call`
+            : "Join voice chat";
     if (micLeaveButton) {
         micLeaveButton.hidden = !isMicJoined;
+    }
+    if (micCallCountEl) {
+        micCallCountEl.textContent = callCount === 1 ? "1 in call" : `${callCount} in call`;
+        micCallCountEl.hidden = !isMicJoined && callCount === 0;
     }
 
     if (!isMicJoined) {
@@ -168,6 +178,15 @@ function updateMicButton() {
     } else {
         micToggleTextEl.textContent = isMicMuted ? "Unmute" : "Mute";
     }
+}
+
+function updateVoiceUsers(users) {
+    activeVoiceUsers = new Map(
+        (Array.isArray(users) ? users : [])
+            .filter(user => user?.id)
+            .map(user => [user.id, user])
+    );
+    updateMicButton();
 }
 
 function createRemoteAudio(peerId, stream) {
@@ -298,6 +317,14 @@ async function joinMic() {
             isMicJoined = true;
             isMicMuted = false;
             ownVoiceId = response.id || "";
+            updateVoiceUsers([
+                ...(response.peers || []),
+                {
+                    id: ownVoiceId,
+                    username,
+                    muted: false
+                }
+            ]);
             updateMicButton();
             addSystemMessage(`${username} joined mic.`);
 
@@ -330,6 +357,7 @@ function setMicMuted(muted) {
 function leaveMic(shouldNotify = true) {
     if (!isMicJoined && !localMicStream) return;
 
+    const leavingVoiceId = ownVoiceId;
     socket.emit("voiceLeave", { room: roomCode });
     localMicStream?.getTracks().forEach(track => track.stop());
     localMicStream = null;
@@ -337,6 +365,7 @@ function leaveMic(shouldNotify = true) {
     isMicMuted = false;
     ownVoiceId = "";
     closeAllVoicePeers();
+    updateVoiceUsers(Array.from(activeVoiceUsers.values()).filter(user => user.id !== leavingVoiceId));
     updateMicButton();
 
     if (shouldNotify) {
@@ -3748,6 +3777,7 @@ socket.on("roomUsers", data => {
 socket.on("chat", addMessage);
 socket.on("system", addSystemMessage);
 socket.on("playerEffect", renderPlayerEffect);
+socket.on("voiceUsers", updateVoiceUsers);
 socket.on("voicePeerJoined", peer => {
     if (!isMicJoined || !peer?.id || peer.id === ownVoiceId) return;
 

@@ -102,6 +102,10 @@ function publicControllers(room) {
     return Array.from(rooms[room].controllers || []);
 }
 
+function publicVoiceUsers(room) {
+    return Array.from(rooms[room].voiceUsers?.values() || []);
+}
+
 function emitRoomUsers(room) {
     if (!rooms[room]) return;
 
@@ -110,6 +114,12 @@ function emitRoomUsers(room) {
         users: publicUsers(room),
         controllers: publicControllers(room)
     });
+}
+
+function emitVoiceUsers(room) {
+    if (!rooms[room]) return;
+
+    io.to(room).emit("voiceUsers", publicVoiceUsers(room));
 }
 
 function canControlRoom(room, socket) {
@@ -186,6 +196,7 @@ function leaveCurrentRoom(socket) {
         id: socket.id,
         username
     });
+    emitVoiceUsers(room);
     if (username) {
         rooms[room].controllers?.delete(username);
     }
@@ -257,6 +268,7 @@ io.on("connection", socket => {
         rooms[room].users.set(socket.id, username);
 
         emitRoomUsers(room);
+        socket.emit("voiceUsers", publicVoiceUsers(room));
 
         socket.to(room).emit("system", `${username} joined the room`);
 
@@ -321,6 +333,7 @@ io.on("connection", socket => {
             username,
             muted: false
         });
+        emitVoiceUsers(room);
     });
 
     socket.on("voiceSignal", data => {
@@ -350,6 +363,7 @@ io.on("connection", socket => {
             username: peer.username,
             muted
         });
+        emitVoiceUsers(room);
     });
 
     socket.on("voiceLeave", data => {
@@ -363,6 +377,7 @@ io.on("connection", socket => {
             id: socket.id,
             username: peer.username
         });
+        emitVoiceUsers(room);
     });
 
     socket.on("playerEffect", data => {

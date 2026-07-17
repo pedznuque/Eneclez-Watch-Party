@@ -212,11 +212,25 @@
                         <h2>Chat</h2>
                         <div class="chat-heading-actions">
                             <button id="micToggle" class="mic-toggle" type="button" aria-pressed="false">
-                                <span class="mic-toggle-icon" aria-hidden="true"></span>
+                                <span class="mic-toggle-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path>
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                        <path d="M12 19v3"></path>
+                                        <path d="M8 22h8"></path>
+                                    </svg>
+                                </span>
                                 <span id="micToggleText">Join Mic</span>
+                                <strong id="micCallCount" class="mic-call-count">0 in call</strong>
                             </button>
                             <button id="micLeave" class="mic-leave" type="button" title="Leave call" aria-label="Leave call" hidden>
-                                <span class="mic-leave-icon" aria-hidden="true"></span>
+                                <span class="mic-leave-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" focusable="false">
+                                        <path d="M21 15.5c-1.9-1.9-4.3-3-7-3h-4c-2.7 0-5.1 1.1-7 3"></path>
+                                        <path d="M6.5 14.3 5 18a2 2 0 0 0 1.2 2.6l1.8.7a2 2 0 0 0 2.6-1.2l.7-1.9"></path>
+                                        <path d="M17.5 14.3 19 18a2 2 0 0 1-1.2 2.6l-1.8.7a2 2 0 0 1-2.6-1.2l-.7-1.9"></path>
+                                    </svg>
+                                </span>
                             </button>
                             <button id="peopleToggle" class="people-toggle" type="button" aria-expanded="false" aria-controls="peoplePopover">
                                 <span class="people-toggle-icon" aria-hidden="true"></span>
