@@ -16,6 +16,20 @@ const io = new Server(server, {
 
 const rooms = {};
 
+app.get("/mobile", (req, res) => {
+    res.sendFile(path.join(CLIENT_SRC_DIR, "mobile-index.html"));
+});
+
+app.get("/mobile/room", (req, res) => {
+    res.sendFile(path.join(CLIENT_SRC_DIR, "mobile-room.html"));
+});
+
+app.get("/mobile-room", (req, res) => {
+    res.sendFile(path.join(CLIENT_SRC_DIR, "mobile-room.html"));
+});
+
+app.use("/mobile", express.static(CLIENT_SRC_DIR));
+
 app.get("/", (req, res) => {
     res.json({
         ok: true,
