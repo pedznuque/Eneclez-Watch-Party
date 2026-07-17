@@ -2858,11 +2858,11 @@ button:disabled {
     right: 18px;
     bottom: 92px;
     z-index: 24;
-    width: min(380px, calc(100vw - 36px));
-    max-height: min(42vh, 360px);
+    width: min(460px, calc(100vw - 36px));
+    max-height: min(44vh, 390px);
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    gap: 10px;
+    grid-template-rows: minmax(0, 1fr) 18px auto;
+    gap: 7px;
     pointer-events: none;
 }
 
@@ -2931,6 +2931,29 @@ button:disabled {
         0 2px 3px rgba(0, 0, 0, .94),
         0 0 10px rgba(0, 0, 0, .86);
     -webkit-text-stroke: .3px rgba(0, 0, 0, .86);
+}
+
+.player-stage:fullscreen .fullscreen-typing {
+    min-height: 18px;
+    margin: 0;
+    padding: 0 8px;
+    overflow: hidden;
+    color: rgba(255, 255, 255, .82);
+    font-size: 12px;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    text-shadow:
+        0 1px 0 #000,
+        0 2px 4px rgba(0, 0, 0, .96),
+        0 0 12px rgba(0, 0, 0, .88);
+    white-space: nowrap;
+    -webkit-text-stroke: .22px rgba(0, 0, 0, .82);
+    pointer-events: none;
+}
+
+.player-stage:fullscreen .fullscreen-typing[hidden] {
+    display: block !important;
+    visibility: hidden;
 }
 
 .player-stage:fullscreen .fullscreen-send {
@@ -3214,10 +3237,10 @@ button:disabled {
 }
 
 .player-stage:fullscreen .fullscreen-send input {
-    min-height: 40px;
+    min-height: 44px;
     min-width: 0;
     width: 100%;
-    padding: 10px 12px;
+    padding: 11px 14px;
     border-color: rgba(255, 255, 255, .14);
     color: #fff;
     background: rgba(17, 23, 34, .44);
@@ -3227,6 +3250,14 @@ button:disabled {
         0 2px 3px rgba(0, 0, 0, .95),
         0 0 9px rgba(0, 0, 0, .86);
     -webkit-text-stroke: .26px rgba(0, 0, 0, .8);
+}
+
+.player-stage:fullscreen .fullscreen-send:has(.fullscreen-mic-leave[hidden]) #fullscreenMessage {
+    grid-column: 3;
+}
+
+.player-stage:fullscreen .fullscreen-send:not(:has(.fullscreen-mic-leave[hidden])) #fullscreenMessage {
+    grid-column: 4;
 }
 
 .player-stage:fullscreen .fullscreen-send input::placeholder {
@@ -3251,7 +3282,7 @@ button:disabled {
         right: 14px;
         bottom: 88px;
         width: auto;
-        max-height: 38vh;
+        max-height: 40vh;
     }
 
     .player-stage:fullscreen .fullscreen-effect-tray {

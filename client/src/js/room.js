@@ -26,6 +26,7 @@ let messageInput = document.getElementById("message");
 const typingEl = document.getElementById("typing");
 const fullscreenChatEl = document.getElementById("fullscreenChat");
 const fullscreenMessagesEl = document.getElementById("fullscreenMessages");
+const fullscreenTypingEl = document.getElementById("fullscreenTyping");
 const fullscreenSendEl = document.getElementById("fullscreenSend");
 const fullscreenMessageInput = document.getElementById("fullscreenMessage");
 const fullscreenChatToggleButton = document.getElementById("fullscreenChatToggle");
@@ -3918,10 +3919,19 @@ socket.on("mediaPlayback", state => {
 });
 
 socket.on("typing", data => {
-    typingEl.textContent = `${data.username} is typing...`;
+    const typingText = `${data.username} is typing...`;
+    typingEl.textContent = typingText;
+    if (fullscreenTypingEl) {
+        fullscreenTypingEl.textContent = typingText;
+        fullscreenTypingEl.hidden = false;
+    }
     clearTimeout(typingTimer);
     typingTimer = setTimeout(() => {
         typingEl.textContent = "";
+        if (fullscreenTypingEl) {
+            fullscreenTypingEl.textContent = "";
+            fullscreenTypingEl.hidden = true;
+        }
     }, 1200);
 });
 
