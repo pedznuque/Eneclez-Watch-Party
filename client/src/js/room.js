@@ -2657,6 +2657,22 @@ function canControlPlayer() {
     return isHostUser() || controllerUsers.has(username);
 }
 
+function shouldBroadcastPlaybackState() {
+    if (!canControlPlayer()) return false;
+
+    const authority = String(lastPlaybackState?.updatedBy || "").trim();
+
+    if (!authority) {
+        return isHostUser();
+    }
+
+    if (authority === username) {
+        return true;
+    }
+
+    return isHostUser() && authority !== currentHost && !controllerUsers.has(authority);
+}
+
 function formatTime(seconds) {
     const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
     const minutes = Math.floor(safeSeconds / 60);
@@ -4558,7 +4574,7 @@ document.addEventListener("fullscreenchange", () => {
 });
 
 setInterval(async () => {
-    if (!canControlPlayer() || handlingPlaybackEnd || playerWebview.src === "about:blank") return;
+    if (!shouldBroadcastPlaybackState() || handlingPlaybackEnd || playerWebview.src === "about:blank") return;
 
     if (!isLightYoutubePlayerUrl(playerWebview.src)) {
         skipYoutubeAdsInPlayer();
@@ -4587,7 +4603,7 @@ setInterval(() => {
 }, 500);
 
 setInterval(async () => {
-    if (!canControlPlayer() || applyingRemotePlayback) return;
+    if (!shouldBroadcastPlaybackState() || applyingRemotePlayback) return;
 
     const state = await readPlaybackState();
 
