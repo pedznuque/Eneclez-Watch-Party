@@ -4,6 +4,9 @@ const statusText = document.getElementById("status");
 const recentRoomsSection = document.getElementById("recentRoomsSection");
 const recentRoomsEl = document.getElementById("recentRooms");
 const clearRecentRoomsButton = document.getElementById("clearRecentRooms");
+const appLoadingOverlay = document.getElementById("appLoadingOverlay");
+const appLoadingTitle = document.getElementById("appLoadingTitle");
+const appLoadingText = document.getElementById("appLoadingText");
 const RECENT_ROOMS_KEY = "eneclezRecentRooms";
 
 function randomName() {
@@ -13,6 +16,18 @@ function randomName() {
 
 function setStatus(message) {
     statusText.textContent = message;
+}
+
+function setLobbyLoading(isLoading, title = "Opening room", text = "Connecting to Eneclez Watch Party") {
+    if (!appLoadingOverlay) return;
+
+    appLoadingOverlay.hidden = !isLoading;
+    if (appLoadingTitle) appLoadingTitle.textContent = title;
+    if (appLoadingText) appLoadingText.textContent = text;
+
+    document.body.classList.toggle("is-lobby-loading", Boolean(isLoading));
+    document.getElementById("create").disabled = Boolean(isLoading);
+    document.getElementById("join").disabled = Boolean(isLoading);
 }
 
 function saveUsername() {
@@ -78,6 +93,7 @@ function renderRecentRooms() {
         joinButton.addEventListener("click", () => {
             saveUsername();
             saveRecentRoom(item.room);
+            setLobbyLoading(true, "Joining room", `Opening room ${item.room}`);
             location.href = `room.html?room=${item.room}`;
         });
 
@@ -101,6 +117,7 @@ document.getElementById("create").onclick = () => {
 
     const room = String(Math.floor(100000 + Math.random() * 900000));
     saveRecentRoom(room, { created: true });
+    setLobbyLoading(true, "Creating room", `Opening room ${room}`);
     location.href = `room.html?room=${room}&create=1`;
 };
 
@@ -116,6 +133,7 @@ document.getElementById("join").onclick = () => {
     }
 
     saveRecentRoom(room);
+    setLobbyLoading(true, "Joining room", `Opening room ${room}`);
     location.href = `room.html?room=${room}`;
 };
 

@@ -22,6 +22,9 @@ const fullscreenEffectsEl = document.getElementById("fullscreenEffects");
 const fullscreenEffectToggleButton = document.getElementById("fullscreenEffectToggle");
 const fullscreenEffectTrayEl = document.getElementById("fullscreenEffectTray");
 const fullscreenEffectButtons = Array.from(document.querySelectorAll(".fullscreen-effect-button"));
+const roomLoadingOverlay = document.getElementById("roomLoadingOverlay");
+const roomLoadingTitle = document.getElementById("roomLoadingTitle");
+const roomLoadingText = document.getElementById("roomLoadingText");
 const mediaUrlInput = document.getElementById("mediaUrl");
 const loadMediaButton = document.getElementById("loadMedia");
 const addToQueueButton = document.getElementById("addToQueue");
@@ -91,6 +94,7 @@ let lastPlaybackProgressValue = "";
 let lastPlaybackProgressFill = "";
 let lastPlaybackPausedState = null;
 let selectedVolume = Number(localStorage.getItem("watchPartyVolume") || 100);
+let roomHasJoined = false;
 const FULLSCREEN_EFFECT_TYPES = ["heart", "cat", "star", "bolt"];
 
 const BILIBILI_HOME = "https://www.bilibili.tv/en";
@@ -1109,6 +1113,14 @@ function triggerPremiumEffectImpact() {
 function setConnection(message, statusClass) {
     connectionEl.textContent = message;
     connectionEl.className = `connection ${statusClass}`;
+}
+
+function setRoomLoading(isLoading, title = "Connecting to room", text = "Waiting for the watch party server") {
+    if (!roomLoadingOverlay) return;
+
+    roomLoadingOverlay.hidden = !isLoading;
+    if (roomLoadingTitle) roomLoadingTitle.textContent = title;
+    if (roomLoadingText) roomLoadingText.textContent = text;
 }
 
 function setMediaStatus(message, statusClass = "") {
@@ -3368,10 +3380,12 @@ function renderQueue(items, options = {}) {
 
 function joinRoom() {
     if (!roomCode) {
+        setRoomLoading(false);
         addSystemMessage("Missing room code.");
         return;
     }
 
+    setRoomLoading(true, shouldCreateRoom ? "Creating room" : "Joining room", `Room ${roomCode}`);
     socket.emit("joinRoom", {
         room: roomCode,
         username,
@@ -3385,15 +3399,22 @@ socket.on("connect", () => {
 });
 
 socket.on("disconnect", () => {
+    if (!roomHasJoined) {
+        setRoomLoading(true, "Reconnecting", "Trying to reach the watch party server");
+    }
     setConnection("Disconnected", "is-offline");
 });
 
 socket.on("roomError", message => {
+    roomHasJoined = false;
+    setRoomLoading(false);
     addSystemMessage(message);
     setConnection("Room unavailable", "is-offline");
 });
 
 socket.on("roomUsers", data => {
+    roomHasJoined = true;
+    setRoomLoading(false);
     messageInput.disabled = false;
     messageInput.readOnly = false;
 
