@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <title>Eneclez Watch Party Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#0b0d12">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Eneclez Watch">
-    <link rel="manifest" href="/mobile/manifest.webmanifest">
     <link rel="stylesheet" href="css/room.css">
 </head>
 <body>
@@ -58,15 +53,6 @@
                             webpreferences="contextIsolation=false"
                             allowpopups="false">
                         </webview>
-                        <iframe
-                            id="playerFrame"
-                            class="web-fallback-frame"
-                            src="about:blank"
-                            title="Watch player"
-                            allow="autoplay; fullscreen; picture-in-picture"
-                            allowfullscreen
-                            hidden>
-                        </iframe>
 
                         <div id="playerEmptyState" class="player-empty-state">
                             <div class="theater-glow" aria-hidden="true"></div>
@@ -226,13 +212,6 @@
                         webpreferences="contextIsolation=false"
                         allowpopups="true">
                     </webview>
-                    <iframe
-                        id="browserFrame"
-                        class="web-fallback-frame"
-                        src="about:blank"
-                        title="Watch browser"
-                        hidden>
-                    </iframe>
                     <div id="browserLoadingState" class="browser-loading-state">
                         <div class="browser-loading-card">
                             <span class="browser-loading-spinner" aria-hidden="true"></span>

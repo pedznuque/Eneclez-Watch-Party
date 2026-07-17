@@ -94,19 +94,12 @@ function renderRecentRooms() {
             saveUsername();
             saveRecentRoom(item.room);
             setLobbyLoading(true, "Joining room", `Opening room ${item.room}`);
-            location.href = getRoomHref(item.room);
+            location.href = `room.html?room=${item.room}`;
         });
 
         roomItem.append(copy, joinButton);
         recentRoomsEl.appendChild(roomItem);
     });
-}
-
-function getRoomHref(room, options = {}) {
-    const query = `room=${room}${options.created ? "&create=1" : ""}`;
-    return location.pathname.startsWith("/mobile")
-        ? `/mobile/room?${query}`
-        : `room.html?${query}`;
 }
 
 let username = localStorage.getItem("username");
@@ -125,7 +118,7 @@ document.getElementById("create").onclick = () => {
     const room = String(Math.floor(100000 + Math.random() * 900000));
     saveRecentRoom(room, { created: true });
     setLobbyLoading(true, "Creating room", `Opening room ${room}`);
-    location.href = getRoomHref(room, { created: true });
+    location.href = `room.html?room=${room}&create=1`;
 };
 
 document.getElementById("join").onclick = () => {
@@ -141,7 +134,7 @@ document.getElementById("join").onclick = () => {
 
     saveRecentRoom(room);
     setLobbyLoading(true, "Joining room", `Opening room ${room}`);
-    location.href = getRoomHref(room);
+    location.href = `room.html?room=${room}`;
 };
 
 roomInput.addEventListener("input", () => {
@@ -159,9 +152,3 @@ clearRecentRoomsButton?.addEventListener("click", () => {
     localStorage.removeItem(RECENT_ROOMS_KEY);
     renderRecentRooms();
 });
-
-if (location.pathname.startsWith("/mobile") && "serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/mobile/sw.js").catch(() => {});
-    });
-}

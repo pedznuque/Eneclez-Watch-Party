@@ -17,19 +17,15 @@ const io = new Server(server, {
 const rooms = {};
 
 app.get("/mobile", (req, res) => {
-    res.sendFile(path.join(CLIENT_SRC_DIR, "index.html"));
+    res.sendFile(path.join(CLIENT_SRC_DIR, "mobile-index.html"));
 });
 
 app.get("/mobile/room", (req, res) => {
-    res.sendFile(path.join(CLIENT_SRC_DIR, "room.html"));
+    res.sendFile(path.join(CLIENT_SRC_DIR, "mobile-room.html"));
 });
 
 app.get("/mobile-room", (req, res) => {
     res.sendFile(path.join(CLIENT_SRC_DIR, "mobile-room.html"));
-});
-
-app.get("/room.html", (req, res) => {
-    res.sendFile(path.join(CLIENT_SRC_DIR, "room.html"));
 });
 
 app.use("/mobile", express.static(CLIENT_SRC_DIR));
@@ -41,8 +37,6 @@ app.get("/", (req, res) => {
         service: "watch-party-server"
     });
 });
-
-app.use(express.static(CLIENT_SRC_DIR));
 
 app.get("/youtube-player.html", (req, res) => {
     res.sendFile(path.join(CLIENT_SRC_DIR, "youtube-player.html"));
