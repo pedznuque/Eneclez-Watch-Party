@@ -2935,7 +2935,9 @@ button:disabled {
 
 .player-stage:fullscreen .fullscreen-send {
     position: relative;
-    display: flex;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 40px 40px 40px minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
     padding: 7px;
@@ -2944,6 +2946,10 @@ button:disabled {
     background: rgba(8, 12, 18, .38);
     box-shadow: 0 14px 34px rgba(0, 0, 0, .28);
     pointer-events: auto;
+}
+
+.player-stage:fullscreen .fullscreen-send:has(.fullscreen-mic-leave[hidden]) {
+    grid-template-columns: 40px 40px minmax(0, 1fr) auto;
 }
 
 .player-stage:fullscreen .fullscreen-send[hidden] {
@@ -2982,7 +2988,11 @@ button:disabled {
     display: block;
     overflow: visible;
     margin: auto;
-    fill: currentColor;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
     filter: drop-shadow(0 5px 10px rgba(0, 0, 0, .24));
     transform-origin: 50% 50%;
     transform-box: fill-box;
@@ -3018,7 +3028,7 @@ button:disabled {
 .player-stage:fullscreen .fullscreen-effect-toggle:hover .fullscreen-fx-icon,
 .player-stage:fullscreen .fullscreen-effect-toggle.is-active .fullscreen-fx-icon,
 .player-stage:fullscreen .fullscreen-effect-toggle.is-armed .fullscreen-fx-icon {
-    transform: rotate(-8deg) scale(1.06);
+    transform: rotate(-10deg) scale(1.07);
 }
 
 .player-stage:fullscreen .fullscreen-mic-toggle,
@@ -3205,7 +3215,8 @@ button:disabled {
 
 .player-stage:fullscreen .fullscreen-send input {
     min-height: 40px;
-    min-width: 180px;
+    min-width: 0;
+    width: 100%;
     padding: 10px 12px;
     border-color: rgba(255, 255, 255, .14);
     color: #fff;
@@ -3253,6 +3264,23 @@ button:disabled {
 
     .player-stage:fullscreen .fullscreen-send input {
         min-width: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .player-stage:fullscreen .fullscreen-send {
+        grid-template-columns: 40px 40px 40px minmax(0, 1fr);
+    }
+
+    .player-stage:fullscreen .fullscreen-send:has(.fullscreen-mic-leave[hidden]) {
+        grid-template-columns: 40px 40px minmax(0, 1fr);
+    }
+
+    .player-stage:fullscreen #fullscreenSendButton {
+        grid-column: -2 / -1;
+        justify-self: end;
+        min-width: 48px;
+        padding: 0 10px;
     }
 }
 
@@ -4592,12 +4620,31 @@ body.chat-input-active #browserWebview {
 }
 
 .player-stage:fullscreen .fullscreen-send .fullscreen-mic-toggle,
-.player-stage:fullscreen .fullscreen-send .fullscreen-mic-leave {
+.player-stage:fullscreen .fullscreen-send .fullscreen-mic-leave,
+.player-stage:fullscreen .fullscreen-send .fullscreen-effect-toggle {
     width: 40px !important;
     min-width: 40px !important;
     height: 40px !important;
     min-height: 40px !important;
     padding: 0 !important;
+}
+
+.player-stage:fullscreen .fullscreen-send .fullscreen-effect-toggle {
+    color: rgba(255, 255, 255, .82) !important;
+    border-color: rgba(255, 255, 255, .14) !important;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .18), transparent 30%),
+        linear-gradient(145deg, rgba(24, 32, 47, .78), rgba(9, 13, 20, .58)) !important;
+}
+
+.player-stage:fullscreen .fullscreen-send .fullscreen-effect-toggle:hover,
+.player-stage:fullscreen .fullscreen-send .fullscreen-effect-toggle.is-active,
+.player-stage:fullscreen .fullscreen-send .fullscreen-effect-toggle.is-armed {
+    color: #07110f !important;
+    border-color: transparent !important;
+    background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, .38), transparent 31%),
+        linear-gradient(135deg, var(--primary), var(--accent)) !important;
 }
 
 .player-stage:fullscreen .fullscreen-send .fullscreen-mic-toggle {
