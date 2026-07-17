@@ -2658,19 +2658,7 @@ function canControlPlayer() {
 }
 
 function shouldBroadcastPlaybackState() {
-    if (!canControlPlayer()) return false;
-
-    const authority = String(lastPlaybackState?.updatedBy || "").trim();
-
-    if (!authority) {
-        return isHostUser();
-    }
-
-    if (authority === username) {
-        return true;
-    }
-
-    return isHostUser() && authority !== currentHost && !controllerUsers.has(authority);
+    return isHostUser();
 }
 
 function formatTime(seconds) {
