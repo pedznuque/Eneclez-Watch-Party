@@ -521,6 +521,51 @@ h2 {
     min-height: 0;
 }
 
+.browser-loading-state {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    display: grid;
+    place-items: center;
+    padding: 28px;
+    background:
+        radial-gradient(circle at 40% 30%, rgba(67, 198, 172, .2), transparent 30%),
+        radial-gradient(circle at 70% 72%, rgba(244, 185, 66, .12), transparent 32%),
+        linear-gradient(145deg, #0a0e16, #111722 58%, #0b0e14);
+    pointer-events: none;
+}
+
+.browser-loading-state[hidden] {
+    display: none;
+}
+
+.browser-loading-card {
+    display: grid;
+    justify-items: center;
+    gap: 9px;
+    color: var(--text);
+    text-align: center;
+}
+
+.browser-loading-spinner {
+    width: 44px;
+    height: 44px;
+    display: block;
+    border: 4px solid rgba(255, 255, 255, .14);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: playerLoadingSpin .8s linear infinite;
+}
+
+.browser-loading-card strong {
+    font-size: 15px;
+}
+
+.browser-loading-card small {
+    color: var(--muted);
+    font-size: 12px;
+}
+
 .media-container[hidden] {
     display: none;
 }

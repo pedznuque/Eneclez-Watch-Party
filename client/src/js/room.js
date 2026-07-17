@@ -47,6 +47,7 @@ const playPauseButton = document.getElementById("playPause");
 const stopPlayerButton = document.getElementById("stopPlayer");
 const playerEmptyStateEl = document.getElementById("playerEmptyState");
 const playerLoadingStateEl = document.getElementById("playerLoadingState");
+const browserLoadingStateEl = document.getElementById("browserLoadingState");
 const cleanPlayerButton = document.getElementById("cleanPlayer");
 const playbackTimeEl = document.getElementById("playbackTime");
 const playbackProgressEl = document.getElementById("playbackProgress");
@@ -403,6 +404,16 @@ function setPlayerLoading(isLoading, message = "Loading video") {
     } else {
         restorePlayerMediaAfterLoading();
     }
+}
+
+function setBrowserLoading(isLoading, message = "Loading browser") {
+    if (!browserLoadingStateEl) return;
+
+    browserPane.classList.toggle("is-loading", Boolean(isLoading));
+    browserLoadingStateEl.hidden = !isLoading;
+
+    const title = browserLoadingStateEl.querySelector("strong");
+    if (title) title.textContent = message;
 }
 
 async function mutePlayerMediaDuringLoading() {
@@ -4224,6 +4235,8 @@ browserWebview.addEventListener("console-message", event => {
 });
 
 browserWebview.addEventListener("did-start-loading", () => {
+    setBrowserLoading(true, "Loading browser");
+
     if (playerWebview.src === "about:blank") {
         setMediaStatus("Browsing", "");
     }
@@ -4232,9 +4245,17 @@ browserWebview.addEventListener("did-start-loading", () => {
 });
 
 browserWebview.addEventListener("did-stop-loading", () => {
+    setBrowserLoading(false);
     requestAnimationFrame(syncBrowserWebviewSize);
     keepLinksInside(browserWebview, "blank");
     disableBrowserPlayback();
+});
+
+browserWebview.addEventListener("did-fail-load", event => {
+    if (event?.errorCode === -3) return;
+
+    setBrowserLoading(false);
+    setMediaStatus("Browser load failed", "is-offline");
 });
 
 browserWebview.addEventListener("did-navigate", event => {
