@@ -14,6 +14,7 @@ const peopleToggleButton = document.getElementById("peopleToggle");
 const peoplePopoverEl = document.getElementById("peoplePopover");
 const peopleCloseButton = document.getElementById("peopleClose");
 const micToggleButton = document.getElementById("micToggle");
+const micLeaveButton = document.getElementById("micLeave");
 const micToggleTextEl = document.getElementById("micToggleText");
 const voiceAudioDockEl = document.getElementById("voiceAudioDock");
 const messagesEl = document.getElementById("messages");
@@ -156,8 +157,11 @@ function updateMicButton() {
     micToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
     micToggleButton.setAttribute("aria-pressed", String(isMicJoined && !isMicMuted));
     micToggleButton.title = isMicJoined
-        ? "Click to mute or unmute. Double-click to leave mic."
+        ? "Mute or unmute mic"
         : "Join voice chat";
+    if (micLeaveButton) {
+        micLeaveButton.hidden = !isMicJoined;
+    }
 
     if (!isMicJoined) {
         micToggleTextEl.textContent = "Join Mic";
@@ -349,8 +353,7 @@ micToggleButton?.addEventListener("click", () => {
     setMicMuted(!isMicMuted);
 });
 
-micToggleButton?.addEventListener("dblclick", event => {
-    event.preventDefault();
+micLeaveButton?.addEventListener("click", () => {
     leaveMic();
 });
 
