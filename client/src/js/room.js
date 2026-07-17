@@ -10,6 +10,9 @@ const codeEl = document.getElementById("code");
 const connectionEl = document.getElementById("connection");
 const guestCountEl = document.getElementById("guestCount");
 const usersEl = document.getElementById("users");
+const peopleToggleButton = document.getElementById("peopleToggle");
+const peoplePopoverEl = document.getElementById("peoplePopover");
+const peopleCloseButton = document.getElementById("peopleClose");
 const messagesEl = document.getElementById("messages");
 let messageInput = document.getElementById("message");
 const typingEl = document.getElementById("typing");
@@ -102,6 +105,35 @@ const YOUTUBE_HOME = "https://www.youtube.com/";
 const DAILYMOTION_HOME = "https://www.dailymotion.com/";
 const FACEBOOK_HOME = "https://www.facebook.com/watch/";
 let activeBrowserHome = BILIBILI_HOME;
+
+function setPeoplePopoverVisible(isVisible) {
+    if (!peoplePopoverEl || !peopleToggleButton) return;
+
+    peoplePopoverEl.hidden = !isVisible;
+    peopleToggleButton.setAttribute("aria-expanded", String(isVisible));
+}
+
+peopleToggleButton?.addEventListener("click", event => {
+    event.stopPropagation();
+    setPeoplePopoverVisible(peoplePopoverEl.hidden);
+});
+
+peopleCloseButton?.addEventListener("click", () => {
+    setPeoplePopoverVisible(false);
+});
+
+document.addEventListener("click", event => {
+    if (peoplePopoverEl?.hidden) return;
+    if (peoplePopoverEl?.contains(event.target) || peopleToggleButton?.contains(event.target)) return;
+
+    setPeoplePopoverVisible(false);
+});
+
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+        setPeoplePopoverVisible(false);
+    }
+});
 
 function playbackClockNow() {
     return typeof performance !== "undefined" ? performance.now() : Date.now();

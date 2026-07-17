@@ -197,15 +197,6 @@
             </section>
 
             <aside class="side-panel">
-                <section class="panel guests-panel">
-                    <div class="panel-heading">
-                        <h2>People in this room</h2>
-                        <span id="guestCount">0</span>
-                    </div>
-                    <div id="connection" class="connection is-connecting" hidden>Connecting</div>
-                    <div id="users" class="users"></div>
-                </section>
-
                 <section class="panel queue-panel">
                     <div class="panel-heading">
                         <h2>Watch Queue</h2>
@@ -217,8 +208,24 @@
                 </section>
 
                 <section class="chat-panel">
-                    <div class="panel-heading">
+                    <div class="panel-heading chat-heading">
                         <h2>Chat</h2>
+                        <button id="peopleToggle" class="people-toggle" type="button" aria-expanded="false" aria-controls="peoplePopover">
+                            <span class="people-toggle-icon" aria-hidden="true"></span>
+                            <span>People</span>
+                            <strong id="guestCount">0</strong>
+                        </button>
+                    </div>
+                    <div id="connection" class="connection is-connecting" hidden>Connecting</div>
+                    <div id="peoplePopover" class="people-popover" hidden>
+                        <div class="people-popover-header">
+                            <div>
+                                <strong>People in this room</strong>
+                                <small>Host can allow playback control here.</small>
+                            </div>
+                            <button id="peopleClose" class="people-close" type="button" aria-label="Close people list"></button>
+                        </div>
+                        <div id="users" class="users people-list"></div>
                     </div>
                     <div id="messages" class="messages" aria-live="polite"></div>
                     <p id="typing" class="typing"></p>

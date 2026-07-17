@@ -4015,3 +4015,183 @@ body.chat-input-active #browserWebview {
 .player-fullscreen-button {
     pointer-events: auto !important;
 }
+
+/* People are now folded into chat to give the conversation more room. */
+.side-panel {
+    grid-template-rows: 210px minmax(0, 1fr) !important;
+}
+
+.chat-panel {
+    position: relative;
+}
+
+.chat-heading {
+    gap: 10px;
+}
+
+.people-toggle {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 9px;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(29, 35, 48, .72);
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.people-toggle:hover,
+.people-toggle[aria-expanded="true"] {
+    color: var(--text);
+    border-color: rgba(67, 198, 172, .32);
+    background: rgba(67, 198, 172, .12);
+}
+
+.people-toggle-icon {
+    position: relative;
+    width: 18px;
+    height: 14px;
+    display: inline-block;
+}
+
+.people-toggle-icon::before,
+.people-toggle-icon::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.people-toggle-icon::before {
+    left: 1px;
+    top: 1px;
+    width: 7px;
+    height: 7px;
+    box-shadow: 9px 0 0 currentColor;
+}
+
+.people-toggle-icon::after {
+    left: 0;
+    bottom: 0;
+    width: 9px;
+    height: 5px;
+    border-radius: 7px 7px 2px 2px;
+    box-shadow: 9px 0 0 currentColor;
+}
+
+.people-toggle strong {
+    min-width: 24px !important;
+    padding: 4px 7px !important;
+    border-radius: 999px;
+    color: #07110f;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    text-align: center;
+    font-size: 11px !important;
+}
+
+.people-popover {
+    position: absolute;
+    top: 54px;
+    right: 14px;
+    z-index: 90;
+    width: min(330px, calc(100% - 28px));
+    max-height: min(430px, calc(100% - 86px));
+    min-height: 180px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 14px;
+    background: rgba(15, 20, 29, .96);
+    box-shadow: 0 22px 60px rgba(0, 0, 0, .42);
+}
+
+.people-popover[hidden] {
+    display: none !important;
+}
+
+.people-popover-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.people-popover-header div {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.people-popover-header strong {
+    font-size: 14px;
+}
+
+.people-popover-header small {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.people-close {
+    position: relative;
+    width: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 10px;
+    background: rgba(29, 35, 48, .78);
+}
+
+.people-close::before,
+.people-close::after {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 8px;
+    width: 2px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--muted);
+}
+
+.people-close::before {
+    transform: rotate(45deg);
+}
+
+.people-close::after {
+    transform: rotate(-45deg);
+}
+
+.people-close:hover {
+    border-color: rgba(239, 71, 111, .32);
+    background: rgba(239, 71, 111, .12);
+}
+
+.people-close:hover::before,
+.people-close:hover::after {
+    background: #fff;
+}
+
+#users.people-list {
+    min-height: 0 !important;
+    display: grid !important;
+    align-content: start !important;
+    gap: 7px !important;
+    overflow-y: auto !important;
+    padding: 0 4px 2px 0 !important;
+}
+
+#users.people-list .user {
+    min-height: 46px !important;
+}
+
+@media (max-height: 760px) {
+    .side-panel {
+        grid-template-rows: 178px minmax(0, 1fr) !important;
+    }
+}
