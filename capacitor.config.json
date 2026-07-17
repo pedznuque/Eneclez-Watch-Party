@@ -1,0 +1,17 @@
+{
+    "appId": "com.eneclez.watchparty",
+    "appName": "Eneclez Watch Party",
+    "webDir": "client/src",
+    "server": {
+        "url": "https://eneclez-watch-party.onrender.com/mobile",
+        "cleartext": false
+    },
+    "plugins": {
+        "SplashScreen": {
+            "launchShowDuration": 1200,
+            "backgroundColor": "#0b0d12",
+            "showSpinner": true,
+            "spinnerColor": "#43c6ac"
+        }
+    }
+}

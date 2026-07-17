@@ -3,9 +3,16 @@
   "version": "1.1.0",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "mobile:android": "npx cap add android && npx cap sync android",
+    "mobile:ios": "npx cap add ios && npx cap sync ios",
+    "mobile:sync": "npx cap sync"
   },
   "devDependencies": {
+    "@capacitor/android": "latest",
+    "@capacitor/cli": "latest",
+    "@capacitor/core": "latest",
+    "@capacitor/ios": "latest",
     "electron": "^39.0.0"
   }
 }

@@ -2,10 +2,12 @@ const CACHE_NAME = "eneclez-watch-party-mobile-v1";
 const CACHE_URLS = [
     "/mobile",
     "/mobile/room",
-    "/mobile/css/mobile.css",
-    "/mobile/js/mobile-app.js",
-    "/mobile/js/mobile-room.js",
-    "/mobile/manifest.webmanifest"
+    "/mobile/manifest.webmanifest",
+    "/css/style.css",
+    "/css/room.css",
+    "/js/app.js",
+    "/js/room.js",
+    "/youtube-player.html"
 ];
 
 self.addEventListener("install", event => {

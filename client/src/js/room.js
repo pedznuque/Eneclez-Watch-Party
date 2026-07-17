@@ -41,8 +41,12 @@ const mediaUrlInput = document.getElementById("mediaUrl");
 const loadMediaButton = document.getElementById("loadMedia");
 const addToQueueButton = document.getElementById("addToQueue");
 const mediaStatusEl = document.getElementById("mediaStatus");
-const playerWebview = document.getElementById("playerWebview");
-const browserWebview = document.getElementById("browserWebview");
+let playerWebview = document.getElementById("playerWebview");
+let browserWebview = document.getElementById("browserWebview");
+const electronPlayerWebview = playerWebview;
+const electronBrowserWebview = browserWebview;
+const playerFrame = document.getElementById("playerFrame");
+const browserFrame = document.getElementById("browserFrame");
 const playerStage = document.getElementById("playerStage");
 const playerPane = document.getElementById("playerPane");
 const browserPane = document.getElementById("browserPane");
@@ -127,6 +131,57 @@ const YOUTUBE_HOME = "https://www.youtube.com/";
 const DAILYMOTION_HOME = "https://www.dailymotion.com/";
 const FACEBOOK_HOME = "https://www.facebook.com/watch/";
 let activeBrowserHome = BILIBILI_HOME;
+
+function isRealElectronWebview(element) {
+    return Boolean(element && typeof element.executeJavaScript === "function" && typeof element.loadURL === "function");
+}
+
+const isElectronRoom = isRealElectronWebview(electronPlayerWebview);
+
+function installIframeSurfaceApi(frame) {
+    if (!frame) return;
+
+    frame.executeJavaScript = async code => {
+        const targetWindow = frame.contentWindow;
+        if (!targetWindow) return null;
+        return targetWindow.eval(code);
+    };
+    frame.loadURL = url => {
+        frame.src = url;
+    };
+    frame.getURL = () => frame.src || "about:blank";
+    frame.canGoBack = () => false;
+    frame.canGoForward = () => false;
+    frame.goBack = () => {};
+    frame.goForward = () => {};
+    frame.reload = () => {
+        try {
+            frame.contentWindow?.location?.reload();
+        } catch {
+            frame.src = frame.src;
+        }
+    };
+}
+
+function setupBrowserSafeSurfaces() {
+    if (isElectronRoom) {
+        return;
+    }
+
+    document.body.classList.add("is-web-room");
+    installIframeSurfaceApi(playerFrame);
+    installIframeSurfaceApi(browserFrame);
+
+    electronPlayerWebview.hidden = true;
+    electronBrowserWebview.hidden = true;
+    playerFrame.hidden = false;
+    browserFrame.hidden = true;
+
+    playerWebview = playerFrame;
+    browserWebview = browserFrame;
+}
+
+setupBrowserSafeSurfaces();
 
 function setPeoplePopoverVisible(isVisible) {
     if (!peoplePopoverEl || !peopleToggleButton) return;
@@ -1734,6 +1789,11 @@ function getPlayerUrl(url) {
 
 function loadPlayerWebviewUrl(url) {
     const playerUrl = getPlayerUrl(url);
+
+    if (!isElectronRoom) {
+        setMediaStatus("Loading", "");
+        setPlayerLoading(true);
+    }
 
     playerWebview.src = playerUrl;
 }
@@ -4528,6 +4588,23 @@ playerWebview.addEventListener("did-start-loading", () => {
     }
 });
 
+if (!isElectronRoom) {
+    playerWebview.addEventListener("load", () => {
+        syncPlayerWebviewSize();
+
+        if (playerWebview.src !== "about:blank") {
+            setMediaStatus("Preparing", "");
+            waitForPlayerReady();
+        }
+
+        scheduleQualityApply();
+
+        if (lastPlaybackState) {
+            applyPlaybackState(lastPlaybackState);
+        }
+    });
+}
+
 playerWebview.addEventListener("did-stop-loading", async () => {
     syncPlayerWebviewSize();
 
@@ -4652,6 +4729,13 @@ browserWebview.addEventListener("did-start-loading", () => {
 
     disableBrowserPlayback();
 });
+
+if (!isElectronRoom) {
+    browserWebview.addEventListener("load", () => {
+        setBrowserLoading(false);
+        requestAnimationFrame(syncBrowserWebviewSize);
+    });
+}
 
 browserWebview.addEventListener("did-stop-loading", () => {
     setBrowserLoading(false);
@@ -5123,5 +5207,11 @@ setInterval(async () => {
 
 document.getElementById("leave").onclick = () => {
     socket.emit("leaveRoom");
-    window.location.href = "index.html";
+    window.location.href = location.pathname.startsWith("/mobile") ? "/mobile" : "index.html";
 };
+
+if (location.pathname.startsWith("/mobile") && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/mobile/sw.js").catch(() => {});
+    });
+}
