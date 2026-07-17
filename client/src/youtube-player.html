@@ -79,6 +79,40 @@
                 }
             },
 
+            setQuality(quality) {
+                if (!player || !ready) return false;
+
+                const qualityMap = {
+                    auto: "auto",
+                    360: "medium",
+                    480: "large",
+                    720: "hd720",
+                    1080: "hd1080"
+                };
+                const requestedQuality = qualityMap[String(quality || "auto")] || "auto";
+
+                if (requestedQuality === "auto") {
+                    player.setPlaybackQuality?.("default");
+                    return true;
+                }
+
+                const availableQualities = typeof player.getAvailableQualityLevels === "function"
+                    ? player.getAvailableQualityLevels()
+                    : [];
+                const fallbackOrder = ["highres", "hd2160", "hd1440", "hd1080", "hd720", "large", "medium", "small", "tiny"];
+                const requestedIndex = fallbackOrder.indexOf(requestedQuality);
+                const qualityToApply = availableQualities.includes(requestedQuality)
+                    ? requestedQuality
+                    : fallbackOrder
+                        .slice(Math.max(0, requestedIndex))
+                        .find(candidate => availableQualities.includes(candidate));
+
+                if (!qualityToApply) return false;
+
+                player.setPlaybackQuality?.(qualityToApply);
+                return true;
+            },
+
             async setPaused(paused) {
                 if (!player || !ready) return this.getState();
 

@@ -105,6 +105,7 @@ let lastPlaybackDisplayText = "";
 let lastPlaybackProgressValue = "";
 let lastPlaybackProgressFill = "";
 let lastPlaybackPausedState = null;
+let fullscreenControlsIdleTimer = null;
 let selectedVolume = Number(localStorage.getItem("watchPartyVolume") || 100);
 let roomHasJoined = false;
 let localMicStream = null;
@@ -3172,15 +3173,17 @@ async function applyPlayerQuality(quality, options = {}) {
         return false;
     }
 
-    if (isLightYoutubePlayerUrl(playerWebview.src)) {
-        lastAppliedQuality = requestedQuality;
-        return false;
-    }
-
     try {
         const result = await playerWebview.executeJavaScript(`
             (async () => {
                 const requestedQuality = ${JSON.stringify(requestedQuality)};
+                if (window.watchPartyPlayer?.setQuality) {
+                    return {
+                        ok: Boolean(window.watchPartyPlayer.setQuality(requestedQuality)),
+                        label: requestedQuality
+                    };
+                }
+
                 const qualityLabels = {
                     auto: ["auto", "automatic", "default"],
                     360: ["360", "360p"],
@@ -3307,8 +3310,6 @@ async function applyPlayerQuality(quality, options = {}) {
 }
 
 function scheduleQualityApply() {
-    if (isLightYoutubePlayerUrl(playerWebview.src)) return;
-
     [160, 900, 2400, 5000].forEach(delay => {
         setTimeout(() => {
             if (selectedQuality !== "auto" || canControlPlayer()) {
@@ -3328,11 +3329,10 @@ function updateHostControls() {
             ? "You can control"
             : `Host: ${currentHost || "Waiting"}`;
     const hasMedia = playerWebview.src && playerWebview.src !== "about:blank";
-    const canChooseQuality = hasMedia && !isLightYoutubePlayerUrl(playerWebview.src);
     playPauseButton.disabled = !canControl || !hasMedia;
     stopPlayerButton.disabled = !canControl || !hasMedia;
     playbackProgressEl.disabled = !canControl || !hasMedia;
-    qualitySelectEl.disabled = !canControl || !canChooseQuality;
+    qualitySelectEl.disabled = !canControl || !hasMedia;
 }
 
 async function readPlaybackState() {
@@ -5000,6 +5000,39 @@ playerFullscreenButton.onclick = async () => {
     }
 };
 
+function setFullscreenControlsActive() {
+    if (!playerStage || document.fullscreenElement !== playerStage) return;
+
+    playerStage.classList.remove("is-fullscreen-controls-idle");
+    playerStage.classList.add("is-fullscreen-controls-active");
+
+    clearTimeout(fullscreenControlsIdleTimer);
+    fullscreenControlsIdleTimer = setTimeout(() => {
+        if (document.fullscreenElement !== playerStage) return;
+        if (
+            document.activeElement === fullscreenMessageInput ||
+            document.activeElement === messageInput ||
+            playerControls?.contains(document.activeElement)
+        ) {
+            setFullscreenControlsActive();
+            return;
+        }
+
+        playerStage.classList.remove("is-fullscreen-controls-active");
+        playerStage.classList.add("is-fullscreen-controls-idle");
+    }, 2200);
+}
+
+function clearFullscreenControlsIdle() {
+    clearTimeout(fullscreenControlsIdleTimer);
+    fullscreenControlsIdleTimer = null;
+    playerStage?.classList.remove("is-fullscreen-controls-active", "is-fullscreen-controls-idle");
+}
+
+["pointermove", "pointerdown", "keydown", "wheel"].forEach(eventName => {
+    playerStage?.addEventListener(eventName, setFullscreenControlsActive, { passive: true });
+});
+
 document.addEventListener("fullscreenchange", () => {
     const isFullscreen = document.fullscreenElement === playerStage;
     playerFullscreenButton.classList.toggle("is-fullscreen", isFullscreen);
@@ -5022,6 +5055,9 @@ document.addEventListener("fullscreenchange", () => {
     if (!isFullscreen) {
         setArmedFullscreenEffect("");
         setFullscreenEffectTrayVisible(false);
+        clearFullscreenControlsIdle();
+    } else {
+        setFullscreenControlsActive();
     }
 
     setFullscreenChatVisible(isFullscreenChatVisible);
