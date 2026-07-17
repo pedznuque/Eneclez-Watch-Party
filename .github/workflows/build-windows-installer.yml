@@ -2,6 +2,11 @@ name: Build Windows Installer
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional release tag to attach installer to, for example v1.0.1"
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -52,7 +57,13 @@ jobs:
           retention-days: 30
 
       - name: Attach installer to GitHub Release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "dist/*.exe" --clobber
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          $installer = Get-ChildItem -Path "dist" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            throw "No installer .exe found in client/dist"
+          }
+          gh release upload "$env:RELEASE_TAG" "$($installer.FullName)" --clobber
