@@ -1984,7 +1984,11 @@ function askQueueConfirmation() {
         overlay.className = "queue-confirm-overlay";
         overlay.innerHTML = `
             <div class="queue-confirm-card" role="dialog" aria-modal="true" aria-labelledby="queueConfirmTitle">
-                <div class="queue-confirm-icon" aria-hidden="true">+</div>
+                <div class="queue-confirm-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 5v14M5 12h14" />
+                    </svg>
+                </div>
                 <h3 id="queueConfirmTitle">Add video to queue?</h3>
                 <p>A video is already playing. This selection will be added after the current video.</p>
                 <div class="queue-confirm-actions">
@@ -3145,7 +3149,6 @@ async function applyPlayerVolume(volume = selectedVolume) {
 function updatePlayPauseIcon(paused = true) {
     const isPaused = Boolean(paused);
 
-    playPauseIconEl.textContent = "";
     playPauseButton.title = isPaused ? "Play" : "Pause";
     playPauseButton.setAttribute("aria-label", isPaused ? "Play" : "Pause");
     playPauseButton.classList.toggle("is-playing", !isPaused);
@@ -3701,7 +3704,12 @@ function renderQueue(items, options = {}) {
         const playButton = document.createElement("button");
         playButton.className = "queue-action queue-action-play";
         playButton.type = "button";
-        playButton.textContent = "Play";
+        playButton.innerHTML = `
+            <svg class="queue-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 5.75v12.5c0 .82.9 1.32 1.58.87l9.1-6.25a1.05 1.05 0 0 0 0-1.74l-9.1-6.25A1.04 1.04 0 0 0 8 5.75Z" />
+            </svg>
+            <span>Play</span>
+        `;
         playButton.disabled = Boolean(item.pending) || !canControlPlayer();
         playButton.onclick = () => {
             socket.emit("loadMedia", {
@@ -3720,7 +3728,12 @@ function renderQueue(items, options = {}) {
         const removeButton = document.createElement("button");
         removeButton.className = "queue-action queue-action-remove";
         removeButton.type = "button";
-        removeButton.textContent = "Remove";
+        removeButton.innerHTML = `
+            <svg class="queue-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+            <span>Remove</span>
+        `;
         removeButton.disabled = Boolean(item.pending) || !canRemoveQueueItem;
         removeButton.onclick = () => {
             socket.emit("removeQueue", {

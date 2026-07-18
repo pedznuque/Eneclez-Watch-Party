@@ -4873,3 +4873,140 @@ body.chat-input-active #browserWebview {
     border-color: rgba(239, 71, 111, .52) !important;
     background: rgba(239, 71, 111, .3) !important;
 }
+
+/* Premium SVG icon system */
+.icon-button svg,
+.fullscreen-icon,
+.play-pause-icon,
+.stop-icon,
+.people-toggle-icon,
+.people-close svg,
+.queue-confirm-icon svg,
+.queue-action-icon {
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.icon-button svg {
+    width: 20px;
+    height: 20px;
+}
+
+.play-pause-icon {
+    width: 21px;
+    height: 21px;
+    stroke-width: 0;
+}
+
+.play-pause-icon .play-icon-path,
+.play-pause-icon .pause-icon-path {
+    fill: currentColor;
+    stroke: none;
+}
+
+.play-pause-icon .pause-icon-path {
+    display: none;
+}
+
+.play-toggle.is-playing .play-pause-icon .play-icon-path {
+    display: none;
+}
+
+.play-toggle.is-playing .play-pause-icon .pause-icon-path {
+    display: block;
+}
+
+.play-pause-icon::before,
+.play-pause-icon::after {
+    display: none !important;
+}
+
+.stop-icon {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+    stroke: none;
+}
+
+.fullscreen-icon {
+    width: 20px;
+    height: 20px;
+    background: none !important;
+}
+
+.fullscreen-icon .fullscreen-collapse {
+    display: none;
+}
+
+.player-fullscreen-button.is-fullscreen .fullscreen-icon .fullscreen-expand {
+    display: none;
+}
+
+.player-fullscreen-button.is-fullscreen .fullscreen-icon .fullscreen-collapse {
+    display: block;
+}
+
+.people-toggle-icon {
+    width: 19px;
+    height: 19px;
+    flex: 0 0 19px;
+}
+
+.people-toggle-icon::before,
+.people-toggle-icon::after,
+.people-close::before,
+.people-close::after {
+    display: none !important;
+}
+
+.people-close {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+}
+
+.people-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.people-close:hover {
+    color: #fff;
+}
+
+.queue-confirm-icon {
+    font-size: 0;
+}
+
+.queue-confirm-icon svg {
+    width: 26px;
+    height: 26px;
+    stroke-width: 2.5;
+}
+
+.queue-action {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.queue-action-icon {
+    width: 13px;
+    height: 13px;
+    flex: 0 0 13px;
+}
+
+.queue-action-play .queue-action-icon {
+    fill: currentColor;
+    stroke: none;
+}
+
+.queue-action-remove .queue-action-icon {
+    stroke-width: 2.4;
+}

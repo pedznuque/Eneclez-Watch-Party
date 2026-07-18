@@ -71,17 +71,25 @@
                         </div>
 
                         <button id="playerFullscreen" class="player-fullscreen-button" title="Enter fullscreen" aria-label="Enter fullscreen">
-                            <span class="fullscreen-icon" aria-hidden="true"></span>
+                            <svg class="fullscreen-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path class="fullscreen-expand" d="M8 3H4a1 1 0 0 0-1 1v4M16 3h4a1 1 0 0 1 1 1v4M8 21H4a1 1 0 0 1-1-1v-4M16 21h4a1 1 0 0 0 1-1v-4" />
+                                <path class="fullscreen-collapse" d="M9 3v5a1 1 0 0 1-1 1H3M15 3v5a1 1 0 0 0 1 1h5M9 21v-5a1 1 0 0 0-1-1H3M15 21v-5a1 1 0 0 1 1-1h5" />
+                            </svg>
                         </button>
                     </div>
 
                     <div id="playerControls" class="player-controls">
                         <div class="player-control-row">
                             <button id="playPause" class="play-toggle" disabled title="Play" aria-label="Play">
-                                <span id="playPauseIcon" class="play-pause-icon" aria-hidden="true"></span>
+                                <svg id="playPauseIcon" class="play-pause-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path class="play-icon-path" d="M8 5.75v12.5c0 .82.9 1.32 1.58.87l9.1-6.25a1.05 1.05 0 0 0 0-1.74l-9.1-6.25A1.04 1.04 0 0 0 8 5.75Z" />
+                                    <path class="pause-icon-path" d="M8 5.5h3v13H8zM13 5.5h3v13h-3z" />
+                                </svg>
                             </button>
                             <button id="stopPlayer" class="stop-toggle" disabled title="Stop video" aria-label="Stop video">
-                                <span class="stop-icon" aria-hidden="true"></span>
+                                <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="7" y="7" width="10" height="10" rx="2" />
+                                </svg>
                             </button>
                             <span id="playbackTime" class="playback-time">00:00 / 00:00</span>
                             <label class="quality-control" title="Video quality">
@@ -197,9 +205,24 @@
                         <button id="browseFacebook" class="browser-site-option" type="button">Facebook</button>
                     </div>
                     <div class="browser-nav" aria-label="Browser navigation">
-                        <button id="browserBack" class="icon-button" title="Back" aria-label="Back">&#8592;</button>
-                        <button id="browserForward" class="icon-button" title="Forward" aria-label="Forward">&#8594;</button>
-                        <button id="browserReload" class="icon-button" title="Reload" aria-label="Reload">&#8635;</button>
+                        <button id="browserBack" class="icon-button" title="Back" aria-label="Back">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M15 18 9 12l6-6" />
+                            </svg>
+                        </button>
+                        <button id="browserForward" class="icon-button" title="Forward" aria-label="Forward">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="m9 18 6-6-6-6" />
+                            </svg>
+                        </button>
+                        <button id="browserReload" class="icon-button" title="Reload" aria-label="Reload">
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M20 6v5h-5" />
+                                <path d="M4 18v-5h5" />
+                                <path d="M18.2 9A7 7 0 0 0 6.1 6.4L4 8.5" />
+                                <path d="M5.8 15A7 7 0 0 0 17.9 17.6L20 15.5" />
+                            </svg>
+                        </button>
                     </div>
                 </div>
 
@@ -259,7 +282,14 @@
                                 </span>
                             </button>
                             <button id="peopleToggle" class="people-toggle" type="button" aria-expanded="false" aria-controls="peoplePopover">
-                                <span class="people-toggle-icon" aria-hidden="true"></span>
+                                <svg class="people-toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M16 19a4 4 0 0 0-8 0" />
+                                    <circle cx="12" cy="9" r="3" />
+                                    <path d="M21 19a3.4 3.4 0 0 0-4.6-3.2" />
+                                    <path d="M17.2 6.3a2.4 2.4 0 0 1 0 4.4" />
+                                    <path d="M3 19a3.4 3.4 0 0 1 4.6-3.2" />
+                                    <path d="M6.8 6.3a2.4 2.4 0 0 0 0 4.4" />
+                                </svg>
                                 <span>People</span>
                                 <strong id="guestCount">0</strong>
                             </button>
@@ -272,7 +302,11 @@
                                 <strong>People in this room</strong>
                                 <small>Host can allow playback control here.</small>
                             </div>
-                            <button id="peopleClose" class="people-close" type="button" aria-label="Close people list"></button>
+                            <button id="peopleClose" class="people-close" type="button" aria-label="Close people list">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M6 6l12 12M18 6 6 18" />
+                                </svg>
+                            </button>
                         </div>
                         <div id="users" class="users people-list"></div>
                     </div>
