@@ -4375,15 +4375,20 @@ body.chat-input-active #browserWebview {
 
 /* App feedback animations */
 .message-entering {
-    animation: messageEnter .22s cubic-bezier(.2, .74, .18, 1) both;
+    transform-origin: left bottom;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+    animation: messageEnter .34s cubic-bezier(.18, .86, .22, 1) both;
 }
 
 .message.is-mine.message-entering {
     animation-name: messageEnterMine;
+    transform-origin: right bottom;
 }
 
 .system-message.message-entering {
-    animation: systemMessageEnter .2s ease both;
+    will-change: transform, opacity;
+    animation: systemMessageEnter .28s cubic-bezier(.2, .74, .18, 1) both;
 }
 
 .queue-item-entering {
@@ -4435,34 +4440,42 @@ body.chat-input-active #browserWebview {
 
 @keyframes messageEnter {
     0% {
-        opacity: .82;
-        transform: translateY(6px) scale(.992);
+        opacity: .94;
+        transform: translate3d(-4px, 9px, 0) scale(.985);
+    }
+    62% {
+        opacity: 1;
+        transform: translate3d(0, -1px, 0) scale(1.003);
     }
     100% {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
 }
 
 @keyframes messageEnterMine {
     0% {
-        opacity: .84;
-        transform: translate(6px, 5px) scale(.992);
+        opacity: .94;
+        transform: translate3d(5px, 9px, 0) scale(.985);
+    }
+    62% {
+        opacity: 1;
+        transform: translate3d(0, -1px, 0) scale(1.003);
     }
     100% {
         opacity: 1;
-        transform: translate(0, 0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
 }
 
 @keyframes systemMessageEnter {
     0% {
-        opacity: .86;
-        transform: translateY(4px) scale(.985);
+        opacity: .9;
+        transform: translate3d(0, 6px, 0) scale(.985);
     }
     100% {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
 }
 
