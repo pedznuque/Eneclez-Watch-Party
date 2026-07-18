@@ -30,6 +30,7 @@
       "src/**/*"
     ],
     "win": {
+      "icon": "src/assets/app-icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -45,6 +46,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
+      "installerIcon": "src/assets/app-icon.ico",
+      "uninstallerIcon": "src/assets/app-icon.ico",
       "shortcutName": "Eneclez Watch Party"
     }
   },

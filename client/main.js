@@ -5,6 +5,7 @@ const path = require("path");
 let activeChatWebContentsId = null;
 let mainWindow = null;
 let updatePromptOpen = false;
+let isCheckingForUpdates = false;
 const protectedSessions = new Set();
 
 const BLOCKED_REQUEST_HOSTS = [
@@ -113,13 +114,58 @@ function isAllowedPopup(url) {
  }
 }
 
+function sendUpdateStatus(status) {
+ if (!mainWindow || mainWindow.isDestroyed()) return;
+ mainWindow.webContents.send("watch-party-update-status", status);
+}
+
 function setupAutoUpdates() {
  if (!app.isPackaged) return;
 
  autoUpdater.autoDownload = true;
  autoUpdater.autoInstallOnAppQuit = true;
 
+ autoUpdater.on("checking-for-update", () => {
+  isCheckingForUpdates = true;
+  sendUpdateStatus({
+   state: "checking",
+   message: "Checking for updates..."
+  });
+ });
+
+ autoUpdater.on("update-available", info => {
+  sendUpdateStatus({
+   state: "available",
+   version: info.version,
+   message: `Downloading Eneclez Watch Party ${info.version}...`
+  });
+ });
+
+ autoUpdater.on("update-not-available", () => {
+  isCheckingForUpdates = false;
+  sendUpdateStatus({
+   state: "current",
+   message: "You are on the latest version."
+  });
+ });
+
+ autoUpdater.on("download-progress", progress => {
+  const percent = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
+  sendUpdateStatus({
+   state: "downloading",
+   percent,
+   message: `Downloading update ${percent}%`
+  });
+ });
+
  autoUpdater.on("update-downloaded", async info => {
+  isCheckingForUpdates = false;
+  sendUpdateStatus({
+   state: "ready",
+   version: info.version,
+   message: `Version ${info.version} is ready to install.`
+  });
+
   if (updatePromptOpen) return;
 
   updatePromptOpen = true;
@@ -140,7 +186,12 @@ function setupAutoUpdates() {
  });
 
  autoUpdater.on("error", error => {
+  isCheckingForUpdates = false;
   console.warn("Update check failed:", error?.message || error);
+  sendUpdateStatus({
+   state: "error",
+   message: "Could not check for updates. Try again later."
+  });
  });
 }
 
@@ -153,6 +204,45 @@ function checkForUpdatesSoon() {
   });
  }, 4000);
 }
+
+ipcMain.handle("watch-party-get-app-info", () => ({
+ version: app.getVersion(),
+ isPackaged: app.isPackaged
+}));
+
+ipcMain.handle("watch-party-check-for-updates", async () => {
+ if (!app.isPackaged) {
+  return {
+   ok: false,
+   state: "dev",
+   message: "Update checks work in the installed app."
+  };
+ }
+
+ if (isCheckingForUpdates) {
+  return {
+   ok: true,
+   state: "checking",
+   message: "Already checking for updates..."
+  };
+ }
+
+ try {
+  await autoUpdater.checkForUpdates();
+  return {
+   ok: true,
+   state: "checking",
+   message: "Checking for updates..."
+  };
+ } catch (error) {
+  console.warn("Manual update check failed:", error?.message || error);
+  return {
+   ok: false,
+   state: "error",
+   message: "Could not check for updates. Try again later."
+  };
+ }
+});
 
 app.on("web-contents-created", (_event, contents) => {
  protectSession(contents.session);
@@ -210,6 +300,7 @@ app.whenReady().then(() => {
   width: 1200,
   height: 750,
   autoHideMenuBar: true,
+  icon: path.join(__dirname, "src", "assets", "app-icon.png"),
   webPreferences: {
    preload: path.join(__dirname, "preload.js"),
    webviewTag: true
