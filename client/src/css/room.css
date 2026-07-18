@@ -4798,6 +4798,260 @@ body.chat-input-active #browserWebview {
     box-shadow: none !important;
 }
 
+.throw-effect-heart-shape,
+.throw-effect-cat-shape {
+    position: absolute;
+    inset: 8%;
+    display: block;
+}
+
+.throw-effect-heart-shape {
+    transform: rotate(-45deg) scale(.78);
+    transform-origin: 50% 58%;
+    border-radius: 22% 22% 20% 20%;
+    background:
+        radial-gradient(circle at 34% 30%, rgba(255, 255, 255, .88) 0 8%, transparent 9%),
+        linear-gradient(135deg, #fff3f7 0 10%, #ff75aa 42%, #ef476f 100%);
+    box-shadow: 0 16px 24px rgba(0, 0, 0, .24);
+}
+
+.throw-effect-heart-shape::before,
+.throw-effect-heart-shape::after {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: inherit;
+}
+
+.throw-effect-heart-shape::before {
+    left: 0;
+    top: -50%;
+}
+
+.throw-effect-heart-shape::after {
+    left: 50%;
+    top: 0;
+}
+
+.throw-effect-cat-shape {
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 32% 27%, rgba(255, 255, 255, .9) 0 7%, transparent 8%),
+        linear-gradient(145deg, #fff0bc 0 8%, #f4b942 62%, #d98d24 100%);
+    box-shadow: 0 16px 24px rgba(0, 0, 0, .24);
+}
+
+.throw-effect-cat-shape::before,
+.throw-effect-cat-shape::after {
+    content: "";
+    position: absolute;
+    top: -5%;
+    width: 42%;
+    height: 42%;
+    border-radius: 12% 90% 18% 90%;
+    background: linear-gradient(145deg, #fff0bc 0 8%, #f4b942 72%);
+}
+
+.throw-effect-cat-shape::before {
+    left: 6%;
+    transform: rotate(-28deg);
+}
+
+.throw-effect-cat-shape::after {
+    right: 6%;
+    transform: rotate(118deg);
+}
+
+.throw-effect-cat-face {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: block;
+}
+
+.throw-effect-cat-face::before {
+    content: "";
+    position: absolute;
+    left: 30%;
+    top: 40%;
+    width: 9px;
+    height: 12px;
+    border-radius: 50%;
+    background: #18110a;
+    box-shadow: 30px 0 0 #18110a;
+}
+
+.throw-effect-cat-face::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 57%;
+    width: 26px;
+    height: 13px;
+    border-bottom: 4px solid rgba(24, 17, 10, .82);
+    border-radius: 0 0 999px 999px;
+    transform: translateX(-50%);
+}
+
+.throw-effect-heart .throw-effect-premium-sticker,
+.throw-effect-cat .throw-effect-premium-sticker {
+    overflow: visible;
+}
+
+.throw-effect-heart .throw-effect-premium-sticker img,
+.throw-effect-cat .throw-effect-premium-sticker img {
+    display: none !important;
+}
+
+/* Smoother effect motion: continuous flight into impact, no visible pause. */
+.throw-effect-heart,
+.throw-effect-cat,
+.throw-effect-star,
+.throw-effect-bolt {
+    animation:
+        premiumStickerFloatSmooth 2.02s cubic-bezier(.2, .74, .18, 1) both,
+        throwEffectFade 2.18s ease forwards !important;
+}
+
+.throw-effect-trail {
+    animation: premiumTravelTrailSmooth 2.02s cubic-bezier(.2, .74, .18, 1) both !important;
+}
+
+.throw-effect-premium-sticker {
+    animation: premiumStickerPopSmooth 2.02s cubic-bezier(.2, .74, .18, 1) both !important;
+}
+
+.throw-effect-cat-sticker {
+    animation-name: premiumCatBounceSmooth !important;
+}
+
+.throw-effect-impact-wave {
+    animation-delay: 1.08s !important;
+}
+
+.throw-effect-impact-wave-secondary {
+    animation-delay: 1.14s !important;
+}
+
+.throw-effect-impact-flash,
+.throw-effect-sparkles span,
+.throw-effect-premium-burst span,
+.throw-effect-debris span {
+    animation-delay: 1.08s !important;
+}
+
+.throw-effect-aftershock {
+    animation-delay: 1.2s !important;
+}
+
+@keyframes premiumStickerFloatSmooth {
+    0% {
+        opacity: 0;
+        transform:
+            translate3d(calc(-50% + var(--from-x)), calc(-50% + var(--from-y) + 16px), 0)
+            scale(.34)
+            rotate(-10deg);
+    }
+    10% {
+        opacity: 1;
+    }
+    42% {
+        opacity: 1;
+        transform:
+            translate3d(calc(-50% + var(--mid-x)), calc(-50% + var(--mid-y) - 28px), 0)
+            scale(.88)
+            rotate(7deg);
+    }
+    56% {
+        opacity: 1;
+        transform:
+            translate3d(-50%, -50%, 0)
+            scale(1.12)
+            rotate(var(--impact-tilt, -2deg));
+    }
+    64% {
+        opacity: .72;
+        transform:
+            translate3d(-50%, -50%, 0)
+            scale(.66)
+            rotate(0);
+    }
+    100% {
+        opacity: 0;
+        transform:
+            translate3d(-50%, -50%, 0)
+            scale(.28)
+            rotate(0);
+    }
+}
+
+@keyframes premiumTravelTrailSmooth {
+    0%, 10% {
+        opacity: 0;
+        transform: translate3d(-76%, -50%, 0) rotate(-18deg) scaleX(.14);
+    }
+    34% {
+        opacity: .56;
+        transform: translate3d(-62%, -50%, 0) rotate(-13deg) scaleX(.82);
+    }
+    52% {
+        opacity: .45;
+        transform: translate3d(-52%, -50%, 0) rotate(-6deg) scaleX(1.04);
+    }
+    64%, 100% {
+        opacity: 0;
+        transform: translate3d(-46%, -50%, 0) rotate(-2deg) scaleX(.18);
+    }
+}
+
+@keyframes premiumStickerPopSmooth {
+    0% {
+        opacity: 1;
+        transform: scale(.64) rotate(-6deg);
+    }
+    42% {
+        opacity: 1;
+        transform: scale(.96) rotate(3deg);
+    }
+    56% {
+        opacity: 1;
+        transform: scale(1.1) rotate(-2deg);
+    }
+    64% {
+        opacity: .48;
+        transform: scale(.62) rotate(1deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(.28) rotate(0);
+    }
+}
+
+@keyframes premiumCatBounceSmooth {
+    0% {
+        opacity: 1;
+        transform: scale(.64) rotate(6deg);
+    }
+    42% {
+        opacity: 1;
+        transform: scale(.94) rotate(-3deg);
+    }
+    56% {
+        opacity: 1;
+        transform: scale(1.1) rotate(2deg);
+    }
+    64% {
+        opacity: .48;
+        transform: scale(.62) rotate(-1deg);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(.28) rotate(0);
+    }
+}
+
 @keyframes premiumDebrisExplode {
     0% {
         opacity: 0;
