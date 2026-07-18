@@ -1216,6 +1216,13 @@ function appendChatNode(container, node) {
     container.scrollTop = container.scrollHeight;
 }
 
+function markAnimatedNode(node, className) {
+    if (!node || !className) return;
+    node.classList.remove(className);
+    void node.offsetWidth;
+    node.classList.add(className);
+}
+
 function cleanDisplayName(value) {
     return String(value || "Guest").trim().slice(0, 18) || "Guest";
 }
@@ -1246,8 +1253,11 @@ function createMessageElement({ username: sender, message, sentAt }) {
 
 function addMessage(messageData) {
     const messageEl = createMessageElement(messageData);
+    markAnimatedNode(messageEl, "message-entering");
     appendChatNode(messagesEl, messageEl);
-    appendChatNode(fullscreenMessagesEl, messageEl.cloneNode(true));
+    const fullscreenMessageEl = messageEl.cloneNode(true);
+    markAnimatedNode(fullscreenMessageEl, "message-entering");
+    appendChatNode(fullscreenMessagesEl, fullscreenMessageEl);
 }
 
 function createSystemMessageElement(message) {
@@ -1259,8 +1269,11 @@ function createSystemMessageElement(message) {
 
 function addSystemMessage(message) {
     const item = createSystemMessageElement(message);
+    markAnimatedNode(item, "message-entering");
     appendChatNode(messagesEl, item);
-    appendChatNode(fullscreenMessagesEl, item.cloneNode(true));
+    const fullscreenItem = item.cloneNode(true);
+    markAnimatedNode(fullscreenItem, "message-entering");
+    appendChatNode(fullscreenMessagesEl, fullscreenItem);
 }
 
 let effectAudioContext = null;
@@ -3614,6 +3627,11 @@ function loadBilibili({ url, title, loadedBy }) {
 function renderQueue(items, options = {}) {
     queueItems = Array.isArray(items) ? items : [];
     queueCountEl.textContent = queueItems.length;
+    const previousQueueIds = new Set(
+        Array.from(queueListEl.querySelectorAll(".queue-item"))
+            .map(item => item.dataset.queueId)
+            .filter(Boolean)
+    );
     queueListEl.innerHTML = "";
 
     const queuePanel = queueListEl.closest(".queue-panel") || queueListEl.parentElement;
@@ -3638,7 +3656,11 @@ function renderQueue(items, options = {}) {
     queueItems.forEach((item, index) => {
         const queueItem = document.createElement("article");
         queueItem.className = "queue-item";
+        queueItem.dataset.queueId = item.id || `${item.url || "queue"}-${index}`;
         queueItem.dataset.pending = item.pending ? "true" : "false";
+        if (options.animate && (item.pending || !previousQueueIds.has(queueItem.dataset.queueId))) {
+            queueItem.classList.add("queue-item-entering");
+        }
 
         const order = document.createElement("span");
         order.className = "queue-order";

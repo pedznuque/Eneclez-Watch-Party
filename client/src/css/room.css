@@ -4373,6 +4373,143 @@ body.chat-input-active #browserWebview {
     pointer-events: auto !important;
 }
 
+/* App feedback animations */
+.message-entering {
+    animation: messageEnter .28s cubic-bezier(.2, .74, .18, 1) both;
+}
+
+.message.is-mine.message-entering {
+    animation-name: messageEnterMine;
+}
+
+.system-message.message-entering {
+    animation: systemMessageEnter .24s ease both;
+}
+
+.queue-item-entering {
+    animation: queueItemEnter .34s cubic-bezier(.16, .84, .24, 1) both;
+}
+
+.queue-refreshed #queueCount {
+    animation: queueCountPop .34s ease both;
+}
+
+.send:focus-within {
+    border-color: rgba(67, 198, 172, .32);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .05),
+        0 0 0 3px rgba(67, 198, 172, .08);
+}
+
+.send button,
+.queue-action,
+.queue-next-button,
+.player-controls button,
+.browser-controls button,
+.room-actions button {
+    transition:
+        transform .16s ease,
+        filter .16s ease,
+        border-color .16s ease,
+        background .16s ease,
+        box-shadow .16s ease;
+}
+
+.send button:hover:not(:disabled),
+.queue-action:hover:not(:disabled),
+.queue-next-button:hover:not(:disabled),
+.player-controls button:hover:not(:disabled),
+.browser-controls button:hover:not(:disabled),
+.room-actions button:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.send button:active:not(:disabled),
+.queue-action:active:not(:disabled),
+.queue-next-button:active:not(:disabled),
+.player-controls button:active:not(:disabled),
+.browser-controls button:active:not(:disabled),
+.room-actions button:active:not(:disabled) {
+    transform: translateY(0) scale(.98);
+}
+
+@keyframes messageEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(10px) scale(.98);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes messageEnterMine {
+    0% {
+        opacity: 0;
+        transform: translate(10px, 8px) scale(.98);
+    }
+    100% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1);
+    }
+}
+
+@keyframes systemMessageEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(6px) scale(.96);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes queueItemEnter {
+    0% {
+        opacity: 0;
+        transform: translateY(-8px) scale(.985);
+    }
+    58% {
+        opacity: 1;
+        transform: translateY(1px) scale(1.006);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes queueCountPop {
+    0%, 100% {
+        transform: scale(1);
+    }
+    45% {
+        transform: scale(1.12);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .message-entering,
+    .message.is-mine.message-entering,
+    .system-message.message-entering,
+    .queue-item-entering,
+    .queue-refreshed #queueCount {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+
+    .send button,
+    .queue-action,
+    .queue-next-button,
+    .player-controls button,
+    .browser-controls button,
+    .room-actions button {
+        transition-duration: .01ms !important;
+    }
+}
+
 /* People are now folded into chat to give the conversation more room. */
 .side-panel {
     grid-template-rows: 210px minmax(0, 1fr) !important;
