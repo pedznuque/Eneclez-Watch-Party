@@ -639,29 +639,3 @@ button {
         grid-template-columns: repeat(3, 1fr);
     }
 }
-
-/* Keep the lobby polished without paying for extra paint work on weaker GPUs. */
-.app-loading-spinner,
-.preview-play,
-.settings-button,
-.settings-close,
-.recent-room {
-    backface-visibility: hidden;
-    transform: translateZ(0);
-}
-
-.welcome::after,
-.preview-glow {
-    opacity: .82;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: .01ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: .01ms !important;
-    }
-}

@@ -1267,7 +1267,6 @@ let effectAudioContext = null;
 let effectImpactTimer = null;
 let effectImpactReleaseTimer = null;
 const EFFECT_IMPACT_DELAY_MS = 1060;
-const MAX_FULLSCREEN_EFFECTS = 4;
 
 function getEffectAudioContext() {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
@@ -4451,11 +4450,6 @@ function renderPlayerEffect(data = {}) {
     effectEl.innerHTML = getPlayerEffectMarkup(effectType);
     playPremiumEffectSound(effectType);
     triggerPremiumEffectImpact();
-
-    const activeEffects = fullscreenEffectsEl.querySelectorAll(".throw-effect");
-    if (activeEffects.length >= MAX_FULLSCREEN_EFFECTS) {
-        activeEffects[0].remove();
-    }
 
     fullscreenEffectsEl.appendChild(effectEl);
     effectEl.addEventListener("animationend", event => {
