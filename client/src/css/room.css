@@ -4391,6 +4391,20 @@ body.chat-input-active #browserWebview {
     animation: systemMessageEnter .28s cubic-bezier(.2, .74, .18, 1) both;
 }
 
+.player-stage:fullscreen .fullscreen-messages .message-entering {
+    transform-origin: right bottom;
+    animation: fullscreenMessageEnter .42s cubic-bezier(.16, .82, .18, 1) both;
+}
+
+.player-stage:fullscreen .fullscreen-messages .message-entering:not(.is-mine) {
+    transform-origin: left bottom;
+    animation-name: fullscreenMessageEnterOther;
+}
+
+.player-stage:fullscreen .fullscreen-messages .system-message.message-entering {
+    animation: fullscreenSystemMessageEnter .34s cubic-bezier(.2, .74, .18, 1) both;
+}
+
 .queue-item-entering {
     animation: queueItemEnter .28s cubic-bezier(.16, .84, .24, 1) both;
 }
@@ -4479,6 +4493,47 @@ body.chat-input-active #browserWebview {
     }
 }
 
+@keyframes fullscreenMessageEnter {
+    0% {
+        opacity: .96;
+        transform: translate3d(7px, 12px, 0) scale(.992);
+    }
+    55% {
+        opacity: 1;
+        transform: translate3d(0, -2px, 0) scale(1.001);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes fullscreenMessageEnterOther {
+    0% {
+        opacity: .96;
+        transform: translate3d(-7px, 12px, 0) scale(.992);
+    }
+    55% {
+        opacity: 1;
+        transform: translate3d(0, -2px, 0) scale(1.001);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes fullscreenSystemMessageEnter {
+    0% {
+        opacity: .94;
+        transform: translate3d(0, 8px, 0) scale(.99);
+    }
+    100% {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
 @keyframes queueItemEnter {
     0% {
         opacity: .9;
@@ -4510,6 +4565,8 @@ body.chat-input-active #browserWebview {
     .message-entering,
     .message.is-mine.message-entering,
     .system-message.message-entering,
+    .player-stage:fullscreen .fullscreen-messages .message-entering,
+    .player-stage:fullscreen .fullscreen-messages .system-message.message-entering,
     .queue-item-entering,
     .queue-refreshed #queueCount {
         animation-duration: .01ms !important;
