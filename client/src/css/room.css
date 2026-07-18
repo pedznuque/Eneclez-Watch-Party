@@ -4733,3 +4733,109 @@ body.chat-input-active #browserWebview {
     border-color: rgba(239, 71, 111, .52) !important;
     background: rgba(239, 71, 111, .3) !important;
 }
+
+/* Motion/FPS polish: keep fullscreen effects on compositor-friendly properties. */
+.player-stage:fullscreen .fullscreen-effects,
+.throw-effect,
+.throw-effect *,
+.player-stage:fullscreen .player-controls,
+.player-stage:fullscreen .fullscreen-chat {
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+}
+
+.player-stage:fullscreen .fullscreen-effects {
+    contain: layout paint style;
+    isolation: isolate;
+}
+
+.throw-effect {
+    contain: layout paint style;
+    will-change: transform, opacity;
+    transform: translate3d(-50%, -50%, 0);
+    filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .3));
+}
+
+.throw-effect-premium-sticker,
+.throw-effect-trail,
+.throw-effect-impact-wave,
+.throw-effect-impact-flash,
+.throw-effect-aftershock,
+.throw-effect-premium-burst span,
+.throw-effect-debris span,
+.throw-effect-sparkles span {
+    will-change: transform, opacity;
+}
+
+.throw-effect-trail {
+    filter: none !important;
+}
+
+.throw-effect-heart-trail,
+.throw-effect-cat-trail,
+.throw-effect-star-trail,
+.throw-effect-bolt-trail {
+    box-shadow: none !important;
+}
+
+.throw-effect-premium-sticker img,
+.throw-effect-star-shape,
+.throw-effect-bolt-shape {
+    filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .32)) !important;
+}
+
+.throw-effect-premium-burst span,
+.throw-effect-debris span {
+    box-shadow: 0 6px 14px rgba(0, 0, 0, .18) !important;
+}
+
+.throw-effect-sparkles span {
+    box-shadow: none !important;
+}
+
+.throw-effect-impact-wave,
+.throw-effect-aftershock {
+    box-shadow: none !important;
+}
+
+@keyframes premiumDebrisExplode {
+    0% {
+        opacity: 0;
+        transform:
+            translate3d(var(--sx), var(--sy), 0)
+            scale(.38)
+            rotate(var(--spin-start));
+    }
+    14% {
+        opacity: 1;
+        transform:
+            translate3d(calc(var(--ex) * .28), calc(var(--ey) * .28), 0)
+            scale(1)
+            rotate(calc(var(--spin-start) + 48deg));
+    }
+    58% {
+        opacity: .92;
+        transform:
+            translate3d(calc(var(--ex) + var(--drift)), var(--ey), 0)
+            scale(.96)
+            rotate(var(--spin-end));
+    }
+    100% {
+        opacity: 0;
+        transform:
+            translate3d(calc(var(--ex) + var(--drift) * 1.5), calc(var(--ey) + 56px), 0)
+            scale(.48)
+            rotate(calc(var(--spin-end) + 58deg));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+    }
+}
