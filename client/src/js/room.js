@@ -4289,7 +4289,7 @@ function getPlayerEffectMarkup(effectType) {
         return `
             <span class="throw-effect-trail throw-effect-heart-trail" aria-hidden="true"></span>
             <span class="throw-effect-premium-sticker throw-effect-heart-sticker" aria-hidden="true">
-                <span class="throw-effect-heart-shape"></span>
+                <img src="assets/effects/heart/heart-sticker.png" alt="">
             </span>
             <span class="throw-effect-impact-wave throw-effect-heart-wave" aria-hidden="true"></span>
             <span class="throw-effect-impact-wave throw-effect-heart-wave throw-effect-impact-wave-secondary" aria-hidden="true"></span>
@@ -4316,9 +4316,7 @@ function getPlayerEffectMarkup(effectType) {
         return `
             <span class="throw-effect-trail throw-effect-cat-trail" aria-hidden="true"></span>
             <span class="throw-effect-premium-sticker throw-effect-cat-sticker" aria-hidden="true">
-                <span class="throw-effect-cat-shape">
-                    <span class="throw-effect-cat-face"></span>
-                </span>
+                <img src="assets/effects/cat/cat-sticker.png" alt="">
             </span>
             <span class="throw-effect-impact-wave throw-effect-cat-wave" aria-hidden="true"></span>
             <span class="throw-effect-impact-wave throw-effect-cat-wave throw-effect-impact-wave-secondary" aria-hidden="true"></span>
