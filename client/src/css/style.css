@@ -135,6 +135,7 @@ body.is-lobby-loading {
     padding: 32px;
     overflow: hidden;
     position: relative;
+    animation: lobbyPanelIn .52s cubic-bezier(.2, .74, .18, 1) both;
 }
 
 .welcome::after {
@@ -294,6 +295,7 @@ h2 {
     border-radius: 50%;
     background: linear-gradient(135deg, var(--primary), var(--accent));
     box-shadow: 0 14px 40px rgba(67, 198, 172, .24);
+    animation: previewPlayPulse 2.8s ease-in-out infinite;
 }
 
 .preview-play::after {
@@ -353,6 +355,7 @@ h2 {
     height: 620px;
     padding: 28px;
     overflow: hidden;
+    animation: lobbyPanelIn .58s cubic-bezier(.2, .74, .18, 1) .05s both;
 }
 
 .card-heading {
@@ -396,6 +399,30 @@ button {
 
 .primary-button {
     width: 100%;
+}
+
+.primary-button,
+.secondary-button,
+.settings-action {
+    transition:
+        transform .18s ease,
+        filter .18s ease,
+        box-shadow .18s ease;
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.settings-action:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+    box-shadow: 0 12px 26px rgba(67, 198, 172, .16);
+}
+
+.primary-button:active,
+.secondary-button:active,
+.settings-action:active {
+    transform: translateY(0);
+    filter: brightness(.98);
 }
 
 .secondary-button {
@@ -480,12 +507,15 @@ button {
     background: rgba(255, 255, 255, .024);
     transition:
         border-color .18s ease,
-        background .18s ease;
+        background .18s ease,
+        transform .18s ease;
+    animation: recentRoomIn .26s ease both;
 }
 
 .recent-room:hover {
     border-color: rgba(67, 198, 172, .16);
     background: rgba(255, 255, 255, .032);
+    transform: translateY(-1px);
 }
 
 .recent-room strong {
@@ -539,6 +569,7 @@ button {
     border-radius: 18px;
     background: #111722;
     box-shadow: 0 26px 80px rgba(0, 0, 0, .44);
+    animation: settingsCardIn .22s cubic-bezier(.2, .74, .18, 1) both;
 }
 
 .settings-card-heading {
@@ -597,6 +628,61 @@ button {
 .settings-action:disabled {
     cursor: wait;
     opacity: .62;
+}
+
+@keyframes lobbyPanelIn {
+    0% {
+        opacity: 0;
+        transform: translateY(16px) scale(.985);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes previewPlayPulse {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 14px 40px rgba(67, 198, 172, .24);
+    }
+    50% {
+        transform: scale(1.045);
+        box-shadow: 0 18px 48px rgba(244, 185, 66, .2);
+    }
+}
+
+@keyframes recentRoomIn {
+    0% {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes settingsCardIn {
+    0% {
+        opacity: 0;
+        transform: translateY(10px) scale(.98);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+    }
 }
 
 @media (max-width: 860px) {
