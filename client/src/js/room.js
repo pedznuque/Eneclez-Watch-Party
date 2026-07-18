@@ -1223,6 +1223,11 @@ function markAnimatedNode(node, className) {
     node.classList.add(className);
 }
 
+function getQueueAnimationKey(item, index = 0) {
+    const source = item?.url || item?.title || item?.id || `queue-${index}`;
+    return String(source).trim().toLowerCase();
+}
+
 function cleanDisplayName(value) {
     return String(value || "Guest").trim().slice(0, 18) || "Guest";
 }
@@ -3627,9 +3632,9 @@ function loadBilibili({ url, title, loadedBy }) {
 function renderQueue(items, options = {}) {
     queueItems = Array.isArray(items) ? items : [];
     queueCountEl.textContent = queueItems.length;
-    const previousQueueIds = new Set(
+    const previousQueueKeys = new Set(
         Array.from(queueListEl.querySelectorAll(".queue-item"))
-            .map(item => item.dataset.queueId)
+            .map(item => item.dataset.queueKey)
             .filter(Boolean)
     );
     queueListEl.innerHTML = "";
@@ -3656,9 +3661,10 @@ function renderQueue(items, options = {}) {
     queueItems.forEach((item, index) => {
         const queueItem = document.createElement("article");
         queueItem.className = "queue-item";
-        queueItem.dataset.queueId = item.id || `${item.url || "queue"}-${index}`;
+        queueItem.dataset.queueId = item.id || "";
+        queueItem.dataset.queueKey = getQueueAnimationKey(item, index);
         queueItem.dataset.pending = item.pending ? "true" : "false";
-        if (options.animate && (item.pending || !previousQueueIds.has(queueItem.dataset.queueId))) {
+        if (options.animate && !previousQueueKeys.has(queueItem.dataset.queueKey)) {
             queueItem.classList.add("queue-item-entering");
         }
 

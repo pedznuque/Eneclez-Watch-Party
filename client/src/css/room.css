@@ -4375,7 +4375,7 @@ body.chat-input-active #browserWebview {
 
 /* App feedback animations */
 .message-entering {
-    animation: messageEnter .28s cubic-bezier(.2, .74, .18, 1) both;
+    animation: messageEnter .22s cubic-bezier(.2, .74, .18, 1) both;
 }
 
 .message.is-mine.message-entering {
@@ -4383,11 +4383,11 @@ body.chat-input-active #browserWebview {
 }
 
 .system-message.message-entering {
-    animation: systemMessageEnter .24s ease both;
+    animation: systemMessageEnter .2s ease both;
 }
 
 .queue-item-entering {
-    animation: queueItemEnter .34s cubic-bezier(.16, .84, .24, 1) both;
+    animation: queueItemEnter .28s cubic-bezier(.16, .84, .24, 1) both;
 }
 
 .queue-refreshed #queueCount {
@@ -4435,8 +4435,8 @@ body.chat-input-active #browserWebview {
 
 @keyframes messageEnter {
     0% {
-        opacity: 0;
-        transform: translateY(10px) scale(.98);
+        opacity: .82;
+        transform: translateY(6px) scale(.992);
     }
     100% {
         opacity: 1;
@@ -4446,8 +4446,8 @@ body.chat-input-active #browserWebview {
 
 @keyframes messageEnterMine {
     0% {
-        opacity: 0;
-        transform: translate(10px, 8px) scale(.98);
+        opacity: .84;
+        transform: translate(6px, 5px) scale(.992);
     }
     100% {
         opacity: 1;
@@ -4457,8 +4457,8 @@ body.chat-input-active #browserWebview {
 
 @keyframes systemMessageEnter {
     0% {
-        opacity: 0;
-        transform: translateY(6px) scale(.96);
+        opacity: .86;
+        transform: translateY(4px) scale(.985);
     }
     100% {
         opacity: 1;
@@ -4468,16 +4468,19 @@ body.chat-input-active #browserWebview {
 
 @keyframes queueItemEnter {
     0% {
-        opacity: 0;
-        transform: translateY(-8px) scale(.985);
+        opacity: .9;
+        transform: translateY(-4px);
+        background: rgba(67, 198, 172, .07);
     }
-    58% {
+    55% {
         opacity: 1;
-        transform: translateY(1px) scale(1.006);
+        transform: translateY(0);
+        background: rgba(67, 198, 172, .045);
     }
     100% {
         opacity: 1;
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
+        background: rgba(255,255,255,.022);
     }
 }
 
