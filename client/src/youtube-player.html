@@ -63,7 +63,7 @@
                 return {
                     currentTime: asNumber(player.getCurrentTime?.()),
                     duration: asNumber(player.getDuration?.()),
-                    paused: state !== 1,
+                    paused: state === 2 || state === 0 || state === 5 || state === -1,
                     ended: state === 0,
                     volume: currentVolume,
                     ready: true

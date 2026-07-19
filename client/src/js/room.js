@@ -95,6 +95,7 @@ let playerReadyCheckTimer = null;
 let playerLoadingReleaseTimer = null;
 let playerAutoplayTimers = [];
 let playerLoadingStartedAt = 0;
+let lastPlayerReadyUrl = "";
 let playerResizeFrame = null;
 let browserResizeFrame = null;
 let isFullscreenChatVisible = true;
@@ -114,6 +115,11 @@ let isMicMuted = false;
 let ownVoiceId = "";
 let activeVoiceUsers = new Map();
 const voicePeers = new Map();
+let voiceAudioContext = null;
+let voiceLevelFrame = null;
+const voiceLevelMonitors = new Map();
+const speakingVoiceIds = new Set();
+let lastLoadedMediaToken = "";
 const FULLSCREEN_EFFECT_TYPES = ["heart", "cat", "star", "bolt"];
 const VOICE_RTC_CONFIG = {
     iceServers: [
@@ -161,10 +167,12 @@ function updateMicButton() {
     if (!micToggleButton || !micToggleTextEl) return;
     const callCount = activeVoiceUsers.size;
     const callCountText = callCount === 1 ? "1 in call" : `${callCount} in call`;
+    const hasSpeakingUser = speakingVoiceIds.size > 0;
 
     micToggleButton.classList.toggle("is-live", isMicJoined && !isMicMuted);
     micToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
     micToggleButton.classList.toggle("has-callers", callCount > 0);
+    micToggleButton.classList.toggle("is-speaking", hasSpeakingUser);
     micToggleButton.setAttribute("aria-pressed", String(isMicJoined && !isMicMuted));
     micToggleButton.title = isMicJoined
         ? "Mute or unmute mic"
@@ -177,11 +185,13 @@ function updateMicButton() {
     if (micCallCountEl) {
         micCallCountEl.textContent = callCountText;
         micCallCountEl.hidden = !isMicJoined && callCount === 0;
+        micCallCountEl.classList.toggle("is-speaking", hasSpeakingUser);
     }
     if (fullscreenMicToggleButton) {
         fullscreenMicToggleButton.classList.toggle("is-live", isMicJoined && !isMicMuted);
         fullscreenMicToggleButton.classList.toggle("is-muted", isMicJoined && isMicMuted);
         fullscreenMicToggleButton.classList.toggle("has-callers", callCount > 0);
+        fullscreenMicToggleButton.classList.toggle("is-speaking", hasSpeakingUser);
         fullscreenMicToggleButton.setAttribute("aria-pressed", String(isMicJoined && !isMicMuted));
         fullscreenMicToggleButton.title = isMicJoined
             ? (isMicMuted ? "Unmute mic" : "Mute mic")
@@ -196,6 +206,7 @@ function updateMicButton() {
     if (fullscreenMicCountEl) {
         fullscreenMicCountEl.textContent = String(callCount);
         fullscreenMicCountEl.hidden = callCount === 0;
+        fullscreenMicCountEl.classList.toggle("is-speaking", hasSpeakingUser);
     }
 
     if (!isMicJoined) {
@@ -211,7 +222,118 @@ function updateVoiceUsers(users) {
             .filter(user => user?.id)
             .map(user => [user.id, user])
     );
+    Array.from(speakingVoiceIds).forEach(id => {
+        if (!activeVoiceUsers.has(id)) {
+            speakingVoiceIds.delete(id);
+        }
+    });
     updateMicButton();
+}
+
+function getVoiceAudioContext() {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return null;
+
+    if (!voiceAudioContext) {
+        voiceAudioContext = new AudioContextCtor();
+    }
+    voiceAudioContext.resume?.().catch(() => {});
+    return voiceAudioContext;
+}
+
+function refreshSpeakingIndicator() {
+    if (isMicMuted && ownVoiceId) {
+        speakingVoiceIds.delete(ownVoiceId);
+    }
+    updateMicButton();
+}
+
+function stopVoiceLevelMonitor(peerId) {
+    const monitor = voiceLevelMonitors.get(peerId);
+    if (monitor?.source) {
+        monitor.source.disconnect();
+    }
+    voiceLevelMonitors.delete(peerId);
+    speakingVoiceIds.delete(peerId);
+    refreshSpeakingIndicator();
+
+    if (voiceLevelMonitors.size === 0 && voiceLevelFrame) {
+        cancelAnimationFrame(voiceLevelFrame);
+        voiceLevelFrame = null;
+    }
+}
+
+function scheduleVoiceLevelMonitor() {
+    if (voiceLevelFrame || voiceLevelMonitors.size === 0) return;
+
+    const tick = () => {
+        voiceLevelFrame = null;
+        const now = performance.now();
+        let changed = false;
+
+        voiceLevelMonitors.forEach((monitor, peerId) => {
+            monitor.analyser.getByteTimeDomainData(monitor.data);
+            let sum = 0;
+            for (let i = 0; i < monitor.data.length; i += 1) {
+                const level = (monitor.data[i] - 128) / 128;
+                sum += level * level;
+            }
+
+            const rms = Math.sqrt(sum / monitor.data.length);
+            if (rms > 0.045) {
+                monitor.lastSpokeAt = now;
+            }
+
+            const isSpeaking = rms > 0.045 || (monitor.speaking && now - monitor.lastSpokeAt < 320);
+            if (monitor.speaking !== isSpeaking) {
+                monitor.speaking = isSpeaking;
+                changed = true;
+                if (isSpeaking && !(peerId === ownVoiceId && isMicMuted)) {
+                    speakingVoiceIds.add(peerId);
+                } else {
+                    speakingVoiceIds.delete(peerId);
+                }
+            }
+        });
+
+        if (changed) {
+            refreshSpeakingIndicator();
+        }
+
+        if (voiceLevelMonitors.size > 0) {
+            voiceLevelFrame = requestAnimationFrame(tick);
+        }
+    };
+
+    voiceLevelFrame = requestAnimationFrame(tick);
+}
+
+function startVoiceLevelMonitor(peerId, stream) {
+    if (!peerId || !stream) return;
+    stopVoiceLevelMonitor(peerId);
+
+    const context = getVoiceAudioContext();
+    if (!context) return;
+
+    try {
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.78;
+
+        const source = context.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        voiceLevelMonitors.set(peerId, {
+            analyser,
+            source,
+            data: new Uint8Array(analyser.fftSize),
+            speaking: false,
+            lastSpokeAt: 0
+        });
+        scheduleVoiceLevelMonitor();
+    } catch {
+        voiceLevelMonitors.delete(peerId);
+    }
 }
 
 function createRemoteAudio(peerId, stream) {
@@ -228,6 +350,7 @@ function createRemoteAudio(peerId, stream) {
 
     audio.srcObject = stream;
     audio.play?.().catch(() => {});
+    startVoiceLevelMonitor(peerId, stream);
 }
 
 function closeVoicePeer(peerId) {
@@ -238,6 +361,7 @@ function closeVoicePeer(peerId) {
     }
 
     document.getElementById(`voiceAudio-${peerId}`)?.remove();
+    stopVoiceLevelMonitor(peerId);
 }
 
 function closeAllVoicePeers() {
@@ -344,6 +468,7 @@ async function joinMic() {
             isMicJoined = true;
             isMicMuted = false;
             ownVoiceId = response.id || "";
+            startVoiceLevelMonitor(ownVoiceId, localMicStream);
             updateVoiceUsers([
                 ...(response.peers || []),
                 {
@@ -379,6 +504,9 @@ function setMicMuted(muted) {
         room: roomCode,
         muted
     });
+    if (muted && ownVoiceId) {
+        speakingVoiceIds.delete(ownVoiceId);
+    }
     updateMicButton();
 }
 
@@ -393,6 +521,7 @@ function leaveMic(shouldNotify = true) {
     isMicMuted = false;
     ownVoiceId = "";
     closeAllVoicePeers();
+    stopVoiceLevelMonitor(leavingVoiceId);
     updateVoiceUsers(Array.from(activeVoiceUsers.values()).filter(user => user.id !== leavingVoiceId));
     updateMicButton();
 
@@ -1018,7 +1147,13 @@ async function isFacebookLoginWall() {
 function waitForPlayerReady() {
     clearInterval(playerReadyCheckTimer);
     clearPlayerAutoplayNudges();
-    setPlayerLoading(true);
+    const readyUrl = String(selectedVideoUrl || playerWebview.src || "").trim();
+    const canShowLoading = readyUrl !== lastPlayerReadyUrl || playerPane.classList.contains("is-empty");
+    if (canShowLoading) {
+        setPlayerLoading(true);
+    } else {
+        setPlayerLoading(false);
+    }
 
     const youtubeLoad = isYoutubeUrl(selectedVideoUrl || playerWebview.src || "");
     const lightYoutubePlayer = isLightYoutubePlayerUrl(playerWebview.src);
@@ -1028,6 +1163,7 @@ function waitForPlayerReady() {
         playerReadyCheckTimer = null;
         clearTimeout(playerLoadingReleaseTimer);
         playerLoadingReleaseTimer = null;
+        lastPlayerReadyUrl = readyUrl;
         setPlayerLoading(false);
         setMediaStatus("Ready", "is-online");
         schedulePlayerAutoplayNudge();
@@ -1221,6 +1357,9 @@ function markAnimatedNode(node, className) {
     node.classList.remove(className);
     void node.offsetWidth;
     node.classList.add(className);
+    node.addEventListener("animationend", () => {
+        node.classList.remove(className);
+    }, { once: true });
 }
 
 function getQueueAnimationKey(item, index = 0) {
@@ -1284,7 +1423,7 @@ function addSystemMessage(message) {
 let effectAudioContext = null;
 let effectImpactTimer = null;
 let effectImpactReleaseTimer = null;
-const EFFECT_IMPACT_DELAY_MS = 1060;
+const EFFECT_IMPACT_DELAY_MS = 1020;
 
 function getEffectAudioContext() {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
@@ -3530,15 +3669,31 @@ async function applyPlaybackState(state) {
 
     try {
         const liveTargetTime = getSyncedPlaybackTime(state);
+        const shouldPause = Boolean(state.paused);
 
-        await playerWebview.executeJavaScript(`
+        const result = await playerWebview.executeJavaScript(`
             (async () => {
                 if (window.watchPartyPlayer?.seekTo) {
-                    await window.watchPartyPlayer.seekTo(
-                        ${JSON.stringify(liveTargetTime)},
-                        ${JSON.stringify(!Boolean(state.paused))}
-                    );
-                    return true;
+                    const playerState = window.watchPartyPlayer.getState?.() || {};
+                    const currentTime = Number(playerState.currentTime) || 0;
+                    const targetTime = ${JSON.stringify(liveTargetTime)};
+                    const shouldPause = ${JSON.stringify(shouldPause)};
+                    const drift = Number.isFinite(targetTime)
+                        ? Math.abs(currentTime - targetTime)
+                        : 0;
+                    const isPauseMatched = Boolean(playerState.paused) === shouldPause;
+
+                    if (playerState.ready && drift <= 1.15 && isPauseMatched) {
+                        return "in-sync";
+                    }
+
+                    if (playerState.ready && drift <= 1.15 && !isPauseMatched && window.watchPartyPlayer?.setPaused) {
+                        await window.watchPartyPlayer.setPaused(shouldPause);
+                        return "pause-only";
+                    }
+
+                    await window.watchPartyPlayer.seekTo(targetTime, !shouldPause);
+                    return "seek";
                 }
 
                 const findVideo = root => {
@@ -3559,13 +3714,19 @@ async function applyPlaybackState(state) {
                 if (!video) return false;
 
                 const targetTime = ${JSON.stringify(liveTargetTime)};
-                const shouldPause = ${JSON.stringify(Boolean(state.paused))};
+                const shouldPause = ${JSON.stringify(shouldPause)};
 
                 const drift = Number.isFinite(targetTime)
                     ? Math.abs(video.currentTime - targetTime)
                     : 0;
 
-                if (Number.isFinite(targetTime) && drift > 0.42) {
+                const isPauseMatched = Boolean(video.paused) === shouldPause;
+
+                if (drift <= 1.15 && isPauseMatched) {
+                    return "in-sync";
+                }
+
+                if (Number.isFinite(targetTime) && drift > 1.15) {
                     video.currentTime = targetTime;
                 }
 
@@ -3577,10 +3738,12 @@ async function applyPlaybackState(state) {
                     await video.play().catch(() => {});
                 }
 
-                return true;
+                return drift > 1.15 ? "seek" : "pause-only";
             })()
         `);
-        await applyPlayerVolume(selectedVolume);
+        if (result && result !== "in-sync") {
+            await applyPlayerVolume(selectedVolume);
+        }
     } finally {
         applyingRemotePlayback = false;
     }
@@ -3610,24 +3773,43 @@ async function emitHostPlaybackState(forcePaused = null) {
     });
 }
 
-function loadBilibili({ url, title, loadedBy }) {
+function loadBilibili({ url, title, loadedBy, loadedAt }) {
+    const nextUrl = String(url || "").trim();
+    const nextToken = `${nextUrl}|${loadedAt || ""}`;
+    const isDuplicateLoad =
+        nextUrl &&
+        nextToken === lastLoadedMediaToken &&
+        nextUrl === selectedVideoUrl &&
+        playerWebview.src !== "about:blank" &&
+        !playerPane.classList.contains("is-empty");
+
     hideQueueCountdown();
     handlingPlaybackEnd = false;
     setPlayerEmptyState(false);
     syncPlayerWebviewSize();
-    selectedVideoUrl = url;
-    loadPlayerWebviewUrl(url);
-    waitForPlayerReady();
-    mediaUrlInput.value = url;
-    setMediaStatus("Loading", "");
-    updateHostControls();
-    lastAppliedQuality = "";
-    [250, 900, 1800].forEach(delay => {
-        setTimeout(() => applyPlayerVolume(selectedVolume), delay);
-    });
-    scheduleQualityApply();
+    selectedVideoUrl = nextUrl;
+    mediaUrlInput.value = nextUrl;
 
-    if (loadedBy) {
+    if (!isDuplicateLoad) {
+        lastLoadedMediaToken = nextToken;
+        if (nextUrl !== lastPlayerReadyUrl) {
+            lastPlayerReadyUrl = "";
+        }
+        loadPlayerWebviewUrl(nextUrl);
+        waitForPlayerReady();
+        setMediaStatus("Loading", "");
+        lastAppliedQuality = "";
+        [250, 900, 1800].forEach(delay => {
+            setTimeout(() => applyPlayerVolume(selectedVolume), delay);
+        });
+        scheduleQualityApply();
+    } else {
+        setMediaStatus("Ready", "is-online");
+    }
+
+    updateHostControls();
+
+    if (loadedBy && !isDuplicateLoad) {
         addSystemMessage(`${loadedBy} loaded ${title || "a video"}.`);
     }
 }
@@ -3876,6 +4058,11 @@ socket.on("voicePeerLeft", peer => {
     }
 });
 socket.on("voicePeerMuted", peer => {
+    if (peer?.muted && peer?.id) {
+        speakingVoiceIds.delete(peer.id);
+        refreshSpeakingIndicator();
+    }
+
     if (peer?.username) {
         addSystemMessage(`${peer.username} ${peer.muted ? "muted" : "unmuted"} mic.`);
     }
@@ -3918,6 +4105,8 @@ socket.on("mediaStopped", async data => {
 
     playerWebview.src = "about:blank";
     selectedVideoUrl = "";
+    lastLoadedMediaToken = "";
+    lastPlayerReadyUrl = "";
     lastPlaybackState = null;
     handlingPlaybackEnd = false;
     mediaUrlInput.value = activeBrowserHome;
@@ -4499,7 +4688,7 @@ function renderPlayerEffect(data = {}) {
         }
     });
 
-    setTimeout(() => effectEl.remove(), 3000);
+    setTimeout(() => effectEl.remove(), 2700);
 }
 
 function sendPlayerEffectAt(event) {
