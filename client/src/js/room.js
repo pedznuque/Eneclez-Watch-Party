@@ -32,6 +32,8 @@ const fullscreenMessageInput = document.getElementById("fullscreenMessage");
 const fullscreenChatToggleButton = document.getElementById("fullscreenChatToggle");
 const compactChatToggleButton = document.getElementById("compactChatToggle");
 const compactChatBadgeEl = document.getElementById("compactChatBadge");
+const compactChatResizeButton = document.getElementById("compactChatResize");
+const compactChatCloseButton = document.getElementById("compactChatClose");
 const compactBrowserToggleButton = document.getElementById("compactBrowserToggle");
 const fullscreenEffectsEl = document.getElementById("fullscreenEffects");
 const fullscreenEffectToggleButton = document.getElementById("fullscreenEffectToggle");
@@ -92,6 +94,7 @@ let queueCountdownLastSecond = null;
 let seekCommitInProgress = false;
 let compactChatUnreadCount = 0;
 let compactBrowserTouched = false;
+let compactChatResizeState = null;
 let seekWasPlaying = false;
 let isSeekingPlayback = false;
 let selectedQuality = "auto";
@@ -1430,6 +1433,29 @@ function isCompactLayout() {
     return window.matchMedia?.("(max-width: 980px)").matches;
 }
 
+function clampCompactChatHeight(height) {
+    const viewportHeight = window.innerHeight || 720;
+    const minHeight = Math.min(230, viewportHeight - 80);
+    const maxHeight = Math.max(minHeight, Math.min(520, viewportHeight - 96));
+    return Math.round(Math.min(Math.max(height, minHeight), maxHeight));
+}
+
+function setCompactChatHeight(height, shouldPersist = false) {
+    const nextHeight = clampCompactChatHeight(height);
+    document.documentElement.style.setProperty("--compact-chat-height", `${nextHeight}px`);
+
+    if (shouldPersist) {
+        localStorage.setItem("watchPartyCompactChatHeight", String(nextHeight));
+    }
+}
+
+function restoreCompactChatHeight() {
+    const savedHeight = Number(localStorage.getItem("watchPartyCompactChatHeight"));
+    if (Number.isFinite(savedHeight) && savedHeight > 0) {
+        setCompactChatHeight(savedHeight, false);
+    }
+}
+
 function setCompactChatOpen(isOpen) {
     if (!isCompactLayout()) return;
 
@@ -1477,6 +1503,8 @@ function syncCompactLayoutState() {
         compactBrowserToggleButton?.setAttribute("aria-pressed", "false");
         return;
     }
+
+    restoreCompactChatHeight();
 
     if (!compactBrowserTouched) {
         setCompactBrowserOpen(false);
@@ -4506,6 +4534,10 @@ compactChatToggleButton?.addEventListener("click", () => {
     setCompactChatOpen(document.body.classList.contains("compact-chat-hidden"));
 });
 
+compactChatCloseButton?.addEventListener("click", () => {
+    setCompactChatOpen(false);
+});
+
 compactBrowserToggleButton?.addEventListener("click", () => {
     compactBrowserTouched = true;
     const shouldOpen = document.body.classList.contains("compact-browser-hidden");
@@ -4519,6 +4551,46 @@ compactBrowserToggleButton?.addEventListener("click", () => {
             });
         });
     }
+});
+
+compactChatResizeButton?.addEventListener("pointerdown", event => {
+    if (!isCompactLayout() || document.body.classList.contains("compact-chat-hidden")) return;
+
+    event.preventDefault();
+    compactChatResizeButton.setPointerCapture?.(event.pointerId);
+    const currentHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--compact-chat-height"));
+    compactChatResizeState = {
+        pointerId: event.pointerId,
+        startY: event.clientY,
+        startHeight: Number.isFinite(currentHeight) ? currentHeight : 270
+    };
+    document.body.classList.add("is-resizing-compact-chat");
+});
+
+compactChatResizeButton?.addEventListener("pointermove", event => {
+    if (!compactChatResizeState || compactChatResizeState.pointerId !== event.pointerId) return;
+
+    const deltaY = compactChatResizeState.startY - event.clientY;
+    setCompactChatHeight(compactChatResizeState.startHeight + deltaY, false);
+});
+
+function endCompactChatResize(pointerId) {
+    if (!compactChatResizeState || compactChatResizeState.pointerId !== pointerId) return;
+
+    const currentHeight = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--compact-chat-height"));
+    if (Number.isFinite(currentHeight)) {
+        setCompactChatHeight(currentHeight, true);
+    }
+    compactChatResizeState = null;
+    document.body.classList.remove("is-resizing-compact-chat");
+}
+
+compactChatResizeButton?.addEventListener("pointerup", event => {
+    endCompactChatResize(event.pointerId);
+});
+
+compactChatResizeButton?.addEventListener("pointercancel", event => {
+    endCompactChatResize(event.pointerId);
 });
 
 window.addEventListener("resize", syncCompactLayoutState);
