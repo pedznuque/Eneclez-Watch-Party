@@ -30,6 +30,9 @@ const fullscreenTypingEl = document.getElementById("fullscreenTyping");
 const fullscreenSendEl = document.getElementById("fullscreenSend");
 const fullscreenMessageInput = document.getElementById("fullscreenMessage");
 const fullscreenChatToggleButton = document.getElementById("fullscreenChatToggle");
+const compactChatToggleButton = document.getElementById("compactChatToggle");
+const compactChatBadgeEl = document.getElementById("compactChatBadge");
+const compactBrowserToggleButton = document.getElementById("compactBrowserToggle");
 const fullscreenEffectsEl = document.getElementById("fullscreenEffects");
 const fullscreenEffectToggleButton = document.getElementById("fullscreenEffectToggle");
 const fullscreenEffectTrayEl = document.getElementById("fullscreenEffectTray");
@@ -87,6 +90,8 @@ let handlingPlaybackEnd = false;
 let playerEndGuardTimer = null;
 let queueCountdownLastSecond = null;
 let seekCommitInProgress = false;
+let compactChatUnreadCount = 0;
+let compactBrowserTouched = false;
 let seekWasPlaying = false;
 let isSeekingPlayback = false;
 let selectedQuality = "auto";
@@ -1402,6 +1407,7 @@ function addMessage(messageData) {
     const fullscreenMessageEl = messageEl.cloneNode(true);
     markAnimatedNode(fullscreenMessageEl, "message-entering");
     appendChatNode(fullscreenMessagesEl, fullscreenMessageEl);
+    notifyCompactChatMessage();
 }
 
 function createSystemMessageElement(message) {
@@ -1418,6 +1424,63 @@ function addSystemMessage(message) {
     const fullscreenItem = item.cloneNode(true);
     markAnimatedNode(fullscreenItem, "message-entering");
     appendChatNode(fullscreenMessagesEl, fullscreenItem);
+}
+
+function isCompactLayout() {
+    return window.matchMedia?.("(max-width: 980px)").matches;
+}
+
+function setCompactChatOpen(isOpen) {
+    if (!isCompactLayout()) return;
+
+    document.body.classList.toggle("compact-chat-hidden", !isOpen);
+    compactChatToggleButton?.setAttribute("aria-pressed", String(isOpen));
+    compactChatToggleButton?.setAttribute("aria-label", isOpen ? "Hide chat" : "Show chat");
+
+    if (isOpen) {
+        compactChatUnreadCount = 0;
+        if (compactChatBadgeEl) {
+            compactChatBadgeEl.hidden = true;
+            compactChatBadgeEl.textContent = "0";
+        }
+    }
+}
+
+function notifyCompactChatMessage() {
+    if (!compactChatToggleButton || !isCompactLayout()) return;
+    if (!document.body.classList.contains("compact-chat-hidden")) return;
+
+    compactChatUnreadCount = Math.min(compactChatUnreadCount + 1, 99);
+    if (compactChatBadgeEl) {
+        compactChatBadgeEl.hidden = false;
+        compactChatBadgeEl.textContent = String(compactChatUnreadCount);
+    }
+}
+
+function setCompactBrowserOpen(isOpen) {
+    if (!isCompactLayout()) return;
+
+    document.body.classList.toggle("compact-browser-hidden", !isOpen);
+    compactBrowserToggleButton?.classList.toggle("is-active", isOpen);
+    compactBrowserToggleButton?.setAttribute("aria-pressed", String(isOpen));
+    compactBrowserToggleButton?.setAttribute("aria-label", isOpen ? "Hide browser" : "Show browser");
+    if (compactBrowserToggleButton) {
+        compactBrowserToggleButton.title = isOpen ? "Hide browser" : "Show browser";
+    }
+}
+
+function syncCompactLayoutState() {
+    if (!isCompactLayout()) {
+        document.body.classList.remove("compact-chat-hidden", "compact-browser-hidden");
+        compactChatToggleButton?.setAttribute("aria-pressed", "true");
+        compactBrowserToggleButton?.classList.remove("is-active");
+        compactBrowserToggleButton?.setAttribute("aria-pressed", "false");
+        return;
+    }
+
+    if (!compactBrowserTouched) {
+        setCompactBrowserOpen(false);
+    }
 }
 
 let effectAudioContext = null;
@@ -4438,6 +4501,28 @@ function setFullscreenChatVisible(isVisible) {
 fullscreenChatToggleButton?.addEventListener("click", () => {
     setFullscreenChatVisible(!isFullscreenChatVisible);
 });
+
+compactChatToggleButton?.addEventListener("click", () => {
+    setCompactChatOpen(document.body.classList.contains("compact-chat-hidden"));
+});
+
+compactBrowserToggleButton?.addEventListener("click", () => {
+    compactBrowserTouched = true;
+    const shouldOpen = document.body.classList.contains("compact-browser-hidden");
+    setCompactBrowserOpen(shouldOpen);
+
+    if (shouldOpen) {
+        requestAnimationFrame(() => {
+            browserPane?.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+        });
+    }
+});
+
+window.addEventListener("resize", syncCompactLayoutState);
+syncCompactLayoutState();
 
 function setFullscreenEffectTrayVisible(isVisible) {
     isFullscreenEffectTrayVisible = Boolean(isVisible);
