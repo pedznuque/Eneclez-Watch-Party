@@ -1,0 +1,14 @@
+{
+  "appId": "com.eneclez.watchparty.mobile",
+  "appName": "Eneclez Watch Party",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0b0d12"
+    }
+  }
+}

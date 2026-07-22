@@ -11,5 +11,8 @@ npm-debug.log*
 dist/
 build/
 out/
+mobile/node_modules/
+mobile/android/
+mobile/package-lock.json
 .DS_Store
 Thumbs.db

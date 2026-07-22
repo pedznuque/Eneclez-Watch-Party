@@ -1,0 +1,21 @@
+{
+  "name": "eneclez-watch-party-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android mobile companion app for Eneclez Watch Party.",
+  "scripts": {
+    "sync": "capacitor sync android",
+    "android": "capacitor open android",
+    "build:apk": "capacitor sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/app": "^7.0.2",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/status-bar": "^7.0.2",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.4"
+  }
+}

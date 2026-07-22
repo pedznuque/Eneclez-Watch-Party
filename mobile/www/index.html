@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Eneclez Watch Party</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="lobbyView" class="lobby-view">
+      <div class="brand-mark" aria-hidden="true">EW</div>
+      <p class="eyebrow">Mobile Watch Party</p>
+      <h1>Eneclez Watch Party</h1>
+      <p class="subcopy">Join the same rooms as desktop. Watch, queue, and chat from your phone.</p>
+
+      <label>
+        <span>Display name</span>
+        <input id="nameInput" autocomplete="name" placeholder="Your name">
+      </label>
+
+      <button id="createRoom" class="primary-button">Create Room</button>
+
+      <div class="join-row">
+        <input id="roomInput" inputmode="numeric" maxlength="6" placeholder="Room code">
+        <button id="joinRoom" class="ghost-button">Join</button>
+      </div>
+
+      <p id="lobbyStatus" class="status-text"></p>
+    </section>
+
+    <section id="roomView" class="room-view" hidden>
+      <header class="room-header">
+        <div>
+          <p class="eyebrow">Room</p>
+          <h2>Eneclez Watch Party</h2>
+        </div>
+        <div class="room-actions">
+          <button id="copyRoom" class="ghost-button small-button">Copy <span id="roomCodeLabel"></span></button>
+          <button id="leaveRoom" class="danger-button small-button">Leave</button>
+        </div>
+      </header>
+
+      <section class="player-card">
+        <div id="playerShell" class="player-shell is-empty">
+          <iframe id="playerFrame" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen></iframe>
+          <div id="emptyPlayer" class="empty-player">
+            <div class="play-orb" aria-hidden="true"></div>
+            <strong>Select a video</strong>
+            <small>Paste a supported link or choose from the queue.</small>
+          </div>
+        </div>
+
+        <div class="player-tools">
+          <button id="playPause" class="round-button" disabled aria-label="Play or pause">▶</button>
+          <button id="stopVideo" class="round-button danger-ring" disabled aria-label="Stop">■</button>
+          <span id="mediaStatus" class="media-status">Empty</span>
+        </div>
+      </section>
+
+      <section class="input-card">
+        <input id="mediaUrl" type="url" placeholder="Paste YouTube, Dailymotion, Facebook, or Bilibili link">
+        <div class="input-actions">
+          <button id="loadMedia" class="primary-button">Play</button>
+          <button id="addQueue" class="ghost-button">Queue</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <h3>Watch Queue</h3>
+          <span id="queueCount">0</span>
+        </div>
+        <div id="queueList" class="queue-list"></div>
+      </section>
+
+      <section class="panel chat-panel">
+        <div class="panel-heading">
+          <h3>Chat</h3>
+          <span id="guestCount">0 people</span>
+        </div>
+        <div id="messages" class="messages"></div>
+        <p id="typing" class="typing"></p>
+        <form id="sendForm" class="send-row">
+          <input id="messageInput" maxlength="500" autocomplete="off" placeholder="Message everyone">
+          <button class="primary-button" type="submit">Send</button>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <script src="https://eneclez-watch-party.onrender.com/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
