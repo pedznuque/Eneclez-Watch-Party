@@ -45,6 +45,25 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Install native Android browser bridge
+        run: |
+          cp -R native/android/app/src/main/java/com/eneclez/watchparty/mobile/. android/app/src/main/java/com/eneclez/watchparty/mobile/
+          python - <<'PY'
+          from pathlib import Path
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+          activity = '''
+                  <activity
+                      android:name=".NativeBrowserActivity"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+                      android:exported="false" />
+          '''
+          if ".NativeBrowserActivity" not in text:
+              text = text.replace("        </application>", activity + "\n        </application>")
+              manifest.write_text(text)
+          PY
+
       - name: Build debug APK
         run: |
           chmod +x android/gradlew

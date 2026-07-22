@@ -11,8 +11,23 @@ const lobbyStatus = document.getElementById("lobbyStatus");
 const roomCodeLabel = document.getElementById("roomCodeLabel");
 const copyRoomButton = document.getElementById("copyRoom");
 const leaveRoomButton = document.getElementById("leaveRoom");
+const playerTab = document.getElementById("playerTab");
+const browserTab = document.getElementById("browserTab");
+const playerView = document.getElementById("playerView");
+const browserView = document.getElementById("browserView");
+const browserFrame = document.getElementById("browserFrame");
+const browserEmpty = document.getElementById("browserEmpty");
+const browserForm = document.getElementById("browserForm");
+const browserUrlInput = document.getElementById("browserUrl");
+const browserBackButton = document.getElementById("browserBack");
+const browserForwardButton = document.getElementById("browserForward");
+const browserReloadButton = document.getElementById("browserReload");
+const browserQueuePanel = document.getElementById("browserQueuePanel");
 const playerShell = document.getElementById("playerShell");
+const nativeVideo = document.getElementById("nativeVideo");
 const playerFrame = document.getElementById("playerFrame");
+const playerFallback = document.getElementById("playerFallback");
+const openExternalVideo = document.getElementById("openExternalVideo");
 const emptyPlayer = document.getElementById("emptyPlayer");
 const playPauseButton = document.getElementById("playPause");
 const stopVideoButton = document.getElementById("stopVideo");
@@ -27,11 +42,24 @@ const messages = document.getElementById("messages");
 const typing = document.getElementById("typing");
 const sendForm = document.getElementById("sendForm");
 const messageInput = document.getElementById("messageInput");
+const browserSiteButtons = Array.from(document.querySelectorAll(".browser-site"));
+
+const BROWSER_URLS = {
+  youtube: "https://m.youtube.com/",
+  bilibili: "https://m.bilibili.com/",
+  dailymotion: "https://www.dailymotion.com/",
+  facebook: "https://m.facebook.com/watch/"
+};
 
 let username = localStorage.getItem("watchPartyMobileName") || "";
 let roomCode = "";
+let pendingRoomCode = "";
 let queueItems = [];
 let currentMedia = null;
+let currentPlayerMode = "empty";
+let currentPlayerUrl = "";
+let browserHistory = [];
+let browserHistoryIndex = -1;
 let typingTimer = null;
 
 nameInput.value = username;
@@ -42,6 +70,117 @@ function setLobbyStatus(text) {
 
 function setMediaStatus(text) {
   mediaStatus.textContent = text || "";
+}
+
+function setRoomTab(tab) {
+  const isBrowser = tab === "browser";
+  playerTab.classList.toggle("is-active", !isBrowser);
+  browserTab.classList.toggle("is-active", isBrowser);
+  playerView.hidden = isBrowser;
+  browserView.hidden = !isBrowser;
+
+  if (isBrowser && !browserFrame.src) {
+    loadBrowserSite("youtube");
+  }
+}
+
+function loadBrowserSite(site) {
+  const url = BROWSER_URLS[site] || BROWSER_URLS.youtube;
+  browserSiteButtons.forEach(button => {
+    button.classList.toggle("is-active", button.dataset.site === site);
+  });
+  navigateBrowser(url);
+}
+
+function browserSearchUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return BROWSER_URLS.youtube;
+
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(raw)) {
+    return `https://${raw}`;
+  }
+
+  return `https://m.youtube.com/results?search_query=${encodeURIComponent(raw)}`;
+}
+
+function updateBrowserControls() {
+  browserBackButton.disabled = browserHistoryIndex <= 0;
+  browserForwardButton.disabled = browserHistoryIndex >= browserHistory.length - 1;
+  browserUrlInput.value = browserHistory[browserHistoryIndex] || "";
+}
+
+function navigateBrowser(url, { replace = false } = {}) {
+  const nextUrl = normalizeUrl(url);
+  if (!nextUrl) return;
+
+  if (replace && browserHistoryIndex >= 0) {
+    browserHistory[browserHistoryIndex] = nextUrl;
+  } else {
+    browserHistory = browserHistory.slice(0, browserHistoryIndex + 1);
+    browserHistory.push(nextUrl);
+    browserHistoryIndex = browserHistory.length - 1;
+  }
+
+  browserFrame.src = nextUrl;
+  browserEmpty.hidden = true;
+  updateBrowserControls();
+}
+
+function getBrowserCurrentUrl() {
+  return browserHistory[browserHistoryIndex] || browserUrlInput.value.trim() || "";
+}
+
+function sendBrowserPageToRoom(action) {
+  const url = normalizeUrl(getBrowserCurrentUrl());
+  if (!url || !roomCode) return;
+
+  const payload = {
+    room: roomCode,
+    username,
+    url,
+    title: titleFromUrl(url)
+  };
+
+  socket.emit(action === "queue" ? "addQueue" : "loadMedia", payload);
+  setMediaStatus(action === "queue" ? "Queued from browser" : "Playing from browser");
+  if (action !== "queue") {
+    setRoomTab("player");
+  }
+}
+
+function sendNativeBrowserResult(result) {
+  const action = result?.action;
+  const url = normalizeUrl(result?.url);
+  if (!url || !roomCode || (action !== "play" && action !== "queue")) return;
+
+  const payload = {
+    room: roomCode,
+    username,
+    url,
+    title: result?.title || titleFromUrl(url)
+  };
+
+  socket.emit(action === "queue" ? "addQueue" : "loadMedia", payload);
+  setMediaStatus(action === "queue" ? "Queued from native browser" : "Playing from native browser");
+  setRoomTab("player");
+}
+
+async function openNativeBrowser(startUrl) {
+  const nativeBrowser = window.Capacitor?.Plugins?.NativeBrowser;
+  if (!nativeBrowser?.open) return false;
+
+  try {
+    const result = await nativeBrowser.open({
+      url: normalizeUrl(startUrl || getBrowserCurrentUrl() || BROWSER_URLS.youtube)
+    });
+    sendNativeBrowserResult(result);
+  } catch {
+    addSystemMessage("Native browser could not open.");
+  }
+
+  return true;
 }
 
 function normalizeUrl(value) {
@@ -77,14 +216,55 @@ function getYoutubeId(url) {
   }
 }
 
+function isDirectVideoUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return /\.(mp4|m4v|webm|ogg|ogv|mov|m3u8)(\?.*)?$/i.test(parsed.pathname + parsed.search);
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyBlockedEmbed(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+    return (
+      host === "facebook.com" ||
+      host.endsWith(".facebook.com") ||
+      host === "fb.watch" ||
+      host === "drive.google.com"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function playerUrlFromMediaUrl(url) {
   if (isYoutubeUrl(url)) {
     const id = getYoutubeId(url);
     if (id) {
-      return `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`;
+      return `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
     }
   }
   return url;
+}
+
+function clearPlayerSurfaces() {
+  nativeVideo.pause();
+  nativeVideo.removeAttribute("src");
+  nativeVideo.load();
+  playerFrame.src = "about:blank";
+  playerFallback.hidden = true;
+}
+
+function setPlayerMode(mode) {
+  currentPlayerMode = mode;
+  playerShell.classList.toggle("is-empty", mode === "empty");
+  playerShell.classList.toggle("is-native", mode === "native");
+  playerShell.classList.toggle("is-frame", mode === "frame");
+  playerShell.classList.toggle("is-fallback", mode === "fallback");
+  emptyPlayer.hidden = mode !== "empty";
 }
 
 function titleFromUrl(url) {
@@ -102,6 +282,7 @@ function enterRoom(code) {
   roomCodeLabel.textContent = code;
   lobbyView.hidden = true;
   roomView.hidden = false;
+  setLobbyStatus("");
 }
 
 function loadPlayer(media) {
@@ -109,20 +290,40 @@ function loadPlayer(media) {
   const url = normalizeUrl(media?.url);
   if (!url) return;
 
-  playerShell.classList.remove("is-empty");
-  emptyPlayer.hidden = true;
-  playerFrame.src = playerUrlFromMediaUrl(url);
+  currentPlayerUrl = url;
+  clearPlayerSurfaces();
   mediaUrlInput.value = url;
   playPauseButton.disabled = false;
   stopVideoButton.disabled = false;
+
+  if (isDirectVideoUrl(url)) {
+    setPlayerMode("native");
+    nativeVideo.src = url;
+    nativeVideo.load();
+    nativeVideo.play().catch(() => {
+      setMediaStatus("Tap play to start native video");
+    });
+    setMediaStatus(media?.title || "Native player");
+    return;
+  }
+
+  if (isLikelyBlockedEmbed(url)) {
+    setPlayerMode("fallback");
+    playerFallback.hidden = false;
+    setMediaStatus("Open in Android browser");
+    return;
+  }
+
+  setPlayerMode("frame");
+  playerFrame.src = playerUrlFromMediaUrl(url);
   setMediaStatus(media?.title || "Playing");
 }
 
 function stopPlayer() {
   currentMedia = null;
-  playerFrame.src = "about:blank";
-  playerShell.classList.add("is-empty");
-  emptyPlayer.hidden = false;
+  currentPlayerUrl = "";
+  clearPlayerSurfaces();
+  setPlayerMode("empty");
   playPauseButton.disabled = true;
   stopVideoButton.disabled = true;
   setMediaStatus("Empty");
@@ -197,26 +398,81 @@ function randomRoomCode() {
 }
 
 createRoomButton.onclick = () => {
+  if (!socket.connected) {
+    setLobbyStatus("Connecting to server. Try again in a moment.");
+    return;
+  }
+
   const code = randomRoomCode();
+  pendingRoomCode = code;
   setLobbyStatus("Creating room...");
+  createRoomButton.disabled = true;
+  joinRoomButton.disabled = true;
   socket.emit("createRoom", {
     room: code,
     username: getName()
   });
-  enterRoom(code);
 };
 
 joinRoomButton.onclick = () => {
+  if (!socket.connected) {
+    setLobbyStatus("Connecting to server. Try again in a moment.");
+    return;
+  }
+
   const code = roomInput.value.trim();
   if (!code) {
     setLobbyStatus("Enter a room code.");
     return;
   }
   setLobbyStatus("Joining room...");
+  pendingRoomCode = code;
+  createRoomButton.disabled = true;
+  joinRoomButton.disabled = true;
   socket.emit("joinRoom", {
     room: code,
     username: getName()
   });
+};
+
+playerTab.onclick = () => setRoomTab("player");
+browserTab.onclick = async () => {
+  if (await openNativeBrowser(getBrowserCurrentUrl() || BROWSER_URLS.youtube)) return;
+  setRoomTab("browser");
+};
+
+browserSiteButtons.forEach(button => {
+  button.onclick = async () => {
+    const siteUrl = BROWSER_URLS[button.dataset.site] || BROWSER_URLS.youtube;
+    if (await openNativeBrowser(siteUrl)) return;
+    loadBrowserSite(button.dataset.site);
+  };
+});
+
+browserForm.onsubmit = event => {
+  event.preventDefault();
+  navigateBrowser(browserSearchUrl(browserUrlInput.value));
+};
+
+browserBackButton.onclick = () => {
+  if (browserHistoryIndex <= 0) return;
+  browserHistoryIndex -= 1;
+  browserFrame.src = browserHistory[browserHistoryIndex];
+  updateBrowserControls();
+};
+
+browserForwardButton.onclick = () => {
+  if (browserHistoryIndex >= browserHistory.length - 1) return;
+  browserHistoryIndex += 1;
+  browserFrame.src = browserHistory[browserHistoryIndex];
+  updateBrowserControls();
+};
+
+browserReloadButton.onclick = () => {
+  const url = getBrowserCurrentUrl();
+  if (url) {
+    browserFrame.src = url;
+  }
 };
 
 copyRoomButton.onclick = async () => {
@@ -270,8 +526,52 @@ stopVideoButton.onclick = () => {
 };
 
 playPauseButton.onclick = () => {
-  addSystemMessage("Mobile pause/play sync is limited in this APK MVP.");
+  if (currentPlayerMode === "native") {
+    if (nativeVideo.paused) {
+      nativeVideo.play().catch(() => setMediaStatus("Tap the video to play"));
+    } else {
+      nativeVideo.pause();
+    }
+    return;
+  }
+
+  if (currentPlayerMode === "frame") {
+    playerFrame.contentWindow?.postMessage(
+      JSON.stringify({
+        event: "command",
+        func: "playVideo",
+        args: []
+      }),
+      "*"
+    );
+    addSystemMessage("Mobile embedded playback depends on the video site.");
+    return;
+  }
+
+  if (currentPlayerUrl) {
+    window.open(currentPlayerUrl, "_blank", "noopener,noreferrer");
+  }
 };
+
+openExternalVideo.onclick = () => {
+  if (currentPlayerUrl) {
+    window.open(currentPlayerUrl, "_blank", "noopener,noreferrer");
+  }
+};
+
+nativeVideo.addEventListener("play", () => {
+  playPauseButton.textContent = "Pause";
+});
+
+nativeVideo.addEventListener("pause", () => {
+  playPauseButton.textContent = "Play";
+});
+
+nativeVideo.addEventListener("error", () => {
+  setPlayerMode("fallback");
+  playerFallback.hidden = false;
+  setMediaStatus("Native player could not open this link");
+});
 
 sendForm.onsubmit = event => {
   event.preventDefault();
@@ -288,11 +588,38 @@ messageInput.addEventListener("input", () => {
 
 socket.on("connect", () => {
   setLobbyStatus("");
+  createRoomButton.disabled = false;
+  joinRoomButton.disabled = false;
+});
+
+socket.on("connect_error", () => {
+  setLobbyStatus("Cannot connect to server yet. Check Wi-Fi or Render server.");
+  createRoomButton.disabled = false;
+  joinRoomButton.disabled = false;
+});
+
+socket.on("roomCreated", data => {
+  const code = String(data?.room || "").trim();
+  if (!code) {
+    setLobbyStatus("Could not create room.");
+    createRoomButton.disabled = false;
+    joinRoomButton.disabled = false;
+    return;
+  }
+
+  socket.emit("joinRoom", {
+    room: code,
+    username: getName(),
+    create: true
+  });
 });
 
 socket.on("roomError", text => {
   setLobbyStatus(text || "Could not join room.");
   addSystemMessage(text || "Room error.");
+  pendingRoomCode = "";
+  createRoomButton.disabled = false;
+  joinRoomButton.disabled = false;
 });
 
 socket.on("roomUsers", data => {
@@ -300,7 +627,14 @@ socket.on("roomUsers", data => {
     guestCount.textContent = `${data.users.length} people`;
   }
   if (!roomView.hidden) return;
-  if (roomInput.value.trim()) enterRoom(roomInput.value.trim());
+
+  const joinedRoom = String(data?.room || pendingRoomCode || roomInput.value.trim() || "").trim();
+  if (joinedRoom) {
+    enterRoom(joinedRoom);
+    pendingRoomCode = "";
+    createRoomButton.disabled = false;
+    joinRoomButton.disabled = false;
+  }
 });
 
 socket.on("mediaLoaded", loadPlayer);
