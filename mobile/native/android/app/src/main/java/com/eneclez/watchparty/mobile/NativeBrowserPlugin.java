@@ -2,13 +2,13 @@ package com.eneclez.watchparty.mobile;
 
 import android.app.Activity;
 import android.content.Intent;
-import com.getcapacitor.ActivityResult;
+import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.annotation.PluginMethod;
 
 @CapacitorPlugin(name = "NativeBrowser")
 public class NativeBrowserPlugin extends Plugin {
