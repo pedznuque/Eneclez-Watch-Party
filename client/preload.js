@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld("watchParty", {
     checkForUpdates() {
         return ipcRenderer.invoke("watch-party-check-for-updates");
     },
+    clearCache() {
+        return ipcRenderer.invoke("watch-party-clear-cache");
+    },
     getDriveMediaUrl() {
         return ipcRenderer.invoke("watch-party-get-drive-media-url");
     },

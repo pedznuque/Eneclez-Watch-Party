@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, webContents } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, session, webContents } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
 
@@ -268,6 +268,37 @@ ipcMain.handle("watch-party-check-for-updates", async () => {
 });
 
 ipcMain.handle("watch-party-get-drive-media-url", () => latestDriveMediaUrl);
+
+ipcMain.handle("watch-party-clear-cache", async () => {
+ const appSession = session.defaultSession;
+ const browserSession = session.fromPartition("persist:eneclez-browser");
+
+ await appSession.clearCache();
+
+ await browserSession.clearCache();
+ await browserSession.clearStorageData({
+  storages: [
+   "appcache",
+   "cachestorage",
+   "cookies",
+   "indexdb",
+   "localstorage",
+   "serviceworkers",
+   "websql"
+  ]
+ });
+
+ if (typeof browserSession.clearAuthCache === "function") {
+  await browserSession.clearAuthCache();
+ }
+
+ latestDriveMediaUrl = null;
+
+ return {
+  ok: true,
+  message: "Browser cache cleared. Restart the app if a site still looks stale."
+ };
+});
 
 app.on("web-contents-created", (_event, contents) => {
  protectSession(contents.session);

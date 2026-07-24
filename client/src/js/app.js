@@ -15,6 +15,8 @@ const settingsName = document.getElementById("settingsName");
 const settingsVolume = document.getElementById("settingsVolume");
 const settingsUpdateStatus = document.getElementById("settingsUpdateStatus");
 const settingsUpdateCheckButton = document.getElementById("settingsUpdateCheck");
+const settingsCacheStatus = document.getElementById("settingsCacheStatus");
+const settingsClearCacheButton = document.getElementById("settingsClearCache");
 const RECENT_ROOMS_KEY = "eneclezRecentRooms";
 
 function randomName() {
@@ -60,6 +62,11 @@ function updateSettingsSnapshot() {
 function setUpdateStatus(message, options = {}) {
     if (settingsUpdateStatus) settingsUpdateStatus.textContent = message;
     if (settingsUpdateCheckButton) settingsUpdateCheckButton.disabled = Boolean(options.busy);
+}
+
+function setCacheStatus(message, options = {}) {
+    if (settingsCacheStatus) settingsCacheStatus.textContent = message;
+    if (settingsClearCacheButton) settingsClearCacheButton.disabled = Boolean(options.busy);
 }
 
 async function loadAppInfo() {
@@ -232,6 +239,22 @@ settingsUpdateCheckButton?.addEventListener("click", async () => {
         setUpdateStatus(result.message, { busy: result.state === "checking" });
     } else {
         setUpdateStatus("Checking for updates...", { busy: true });
+    }
+});
+
+settingsClearCacheButton?.addEventListener("click", async () => {
+    if (!window.watchParty?.clearCache) {
+        setCacheStatus("Clear cache is available in the desktop app.");
+        return;
+    }
+
+    setCacheStatus("Clearing browser cache...", { busy: true });
+
+    try {
+        const result = await window.watchParty.clearCache();
+        setCacheStatus(result?.message || "Browser cache cleared.");
+    } catch {
+        setCacheStatus("Could not clear cache. Close room windows and try again.");
     }
 });
 

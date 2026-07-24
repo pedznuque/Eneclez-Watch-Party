@@ -625,6 +625,18 @@ button {
     background: linear-gradient(135deg, var(--primary), var(--accent));
 }
 
+.settings-action-quiet {
+    color: var(--text);
+    border: 1px solid rgba(255, 255, 255, .1);
+    background: rgba(255, 255, 255, .045);
+}
+
+.settings-action-quiet:hover {
+    border-color: rgba(67, 198, 172, .32);
+    color: var(--primary);
+    background: rgba(67, 198, 172, .08);
+}
+
 .settings-action:disabled {
     cursor: wait;
     opacity: .62;
