@@ -61,6 +61,34 @@
             color: #a5adbd;
             line-height: 1.5;
         }
+
+        .actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        button,
+        a {
+            min-height: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 14px;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 12px;
+            color: #07110f;
+            background: linear-gradient(135deg, #43c6ac, #f4b942);
+            font: 800 13px Inter, Arial, sans-serif;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            color: #f6f7fb;
+            background: rgba(17, 23, 34, .92);
+        }
     </style>
 </head>
 <body>
@@ -69,6 +97,10 @@
         <div class="card">
             <strong id="stateTitle">Google Drive video could not play</strong>
             <p id="stateText">Sign in to Google Drive, make sure the file has view access, then try again.</p>
+            <div class="actions">
+                <a id="signInLink" href="/api/drive/auth/start">Sign in Drive server</a>
+                <button id="retryButton" class="secondary" type="button">Retry</button>
+            </div>
         </div>
     </div>
 
@@ -80,6 +112,8 @@
         const state = document.getElementById("state");
         const stateTitle = document.getElementById("stateTitle");
         const stateText = document.getElementById("stateText");
+        const signInLink = document.getElementById("signInLink");
+        const retryButton = document.getElementById("retryButton");
         let currentVolume = 100;
         let ready = false;
         let failed = false;
@@ -94,6 +128,55 @@
             stateTitle.textContent = title;
             stateText.textContent = text;
             state.classList.add("is-visible");
+        }
+
+        async function refreshStatusMessage() {
+            try {
+                const statusResponse = await fetch("/api/drive/status", { cache: "no-store" });
+                const status = await statusResponse.json();
+
+                if (!status.configured) {
+                    showError(
+                        "Google Drive OAuth is not configured",
+                        "Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on Render, then redeploy."
+                    );
+                    return;
+                }
+
+                if (!status.signedIn) {
+                    showError(
+                        "Google Drive server is not signed in",
+                        "You are signed in inside the browser, but the server stream needs its own Drive sign-in. Click Sign in Drive server, finish Google OAuth, then Retry."
+                    );
+                }
+            } catch {}
+        }
+
+        async function inspectStreamFailure() {
+            if (!streamUrl) return;
+
+            try {
+                const response = await fetch(streamUrl, {
+                    method: "GET",
+                    headers: { range: "bytes=0-0" },
+                    cache: "no-store"
+                });
+
+                if (response.ok || response.status === 206) return;
+
+                const text = (await response.text().catch(() => "")).trim();
+                if (/not signed in/i.test(text)) {
+                    showError(
+                        "Google Drive server is not signed in",
+                        "Click Sign in Drive server, finish Google OAuth, then Retry."
+                    );
+                    return;
+                }
+
+                if (text) {
+                    showError("Google Drive video could not play", text.slice(0, 180));
+                }
+            } catch {}
         }
 
         window.watchPartyPlayer = {
@@ -159,8 +242,18 @@
         video.addEventListener("error", () => {
             showError(
                 "Google Drive video could not play",
-                "The server could not stream this Drive file. Sign in to Drive, check view access, then try again."
+                "The server could not stream this Drive file. Checking Drive sign-in status..."
             );
+            refreshStatusMessage();
+            inspectStreamFailure();
+        });
+
+        retryButton.addEventListener("click", () => {
+            failed = false;
+            ready = false;
+            state.classList.remove("is-visible");
+            video.load();
+            video.play().catch(() => {});
         });
 
         if (!streamUrl) {
@@ -169,6 +262,7 @@
             video.src = streamUrl;
             video.volume = currentVolume / 100;
             video.play().catch(() => {});
+            refreshStatusMessage();
         }
 
         window.addEventListener("keydown", event => {
