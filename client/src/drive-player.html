@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Google Drive Player</title>
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        video {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            object-fit: contain;
+            background: #000;
+        }
+
+        .state {
+            position: fixed;
+            inset: 0;
+            display: none;
+            place-items: center;
+            padding: 24px;
+            color: #f6f7fb;
+            font-family: Inter, Arial, sans-serif;
+            text-align: center;
+            background:
+                radial-gradient(circle at 50% 38%, rgba(67, 198, 172, .16), transparent 30%),
+                #05070b;
+        }
+
+        .state.is-visible {
+            display: grid;
+        }
+
+        .card {
+            max-width: 520px;
+            padding: 22px;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 18px;
+            background: rgba(17, 23, 34, .72);
+        }
+
+        strong {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
+
+        p {
+            margin: 0;
+            color: #a5adbd;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <div id="state" class="state">
+        <div class="card">
+            <strong id="stateTitle">Google Drive video could not play</strong>
+            <p id="stateText">Sign in to Google Drive, make sure the file has view access, then try again.</p>
+        </div>
+    </div>
+
+    <script>
+        const params = new URLSearchParams(location.search);
+        const streamUrl = params.get("stream") || "";
+        const sourceUrl = params.get("source") || "";
+        const video = document.getElementById("video");
+        const state = document.getElementById("state");
+        const stateTitle = document.getElementById("stateTitle");
+        const stateText = document.getElementById("stateText");
+        let currentVolume = 100;
+        let ready = false;
+        let failed = false;
+
+        function asNumber(value) {
+            return Number.isFinite(Number(value)) ? Number(value) : 0;
+        }
+
+        function showError(title, text) {
+            failed = true;
+            ready = false;
+            stateTitle.textContent = title;
+            stateText.textContent = text;
+            state.classList.add("is-visible");
+        }
+
+        window.watchPartyPlayer = {
+            getState() {
+                return {
+                    currentTime: asNumber(video.currentTime),
+                    duration: asNumber(video.duration),
+                    paused: video.paused,
+                    ended: Boolean(video.ended),
+                    volume: currentVolume,
+                    ready: Boolean(ready && !failed)
+                };
+            },
+
+            setVolume(volume) {
+                currentVolume = Math.max(0, Math.min(100, Math.round(Number(volume) || 0)));
+                video.volume = currentVolume / 100;
+                video.muted = currentVolume <= 0;
+            },
+
+            setQuality() {
+                return false;
+            },
+
+            async setPaused(paused) {
+                if (paused) {
+                    video.pause();
+                } else {
+                    this.setVolume(currentVolume);
+                    await video.play().catch(() => {});
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 80));
+                return this.getState();
+            },
+
+            async seekTo(seconds, resume) {
+                video.currentTime = Math.max(0, asNumber(seconds));
+
+                if (resume) {
+                    this.setVolume(currentVolume);
+                    await video.play().catch(() => {});
+                } else {
+                    video.pause();
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 80));
+                return this.getState();
+            }
+        };
+
+        video.addEventListener("loadedmetadata", () => {
+            ready = true;
+            state.classList.remove("is-visible");
+        });
+
+        video.addEventListener("canplay", () => {
+            ready = true;
+            state.classList.remove("is-visible");
+            video.play().catch(() => {});
+        });
+
+        video.addEventListener("error", () => {
+            showError(
+                "Google Drive video could not play",
+                "The server could not stream this Drive file. Sign in to Drive, check view access, then try again."
+            );
+        });
+
+        if (!streamUrl) {
+            showError("Missing Drive stream", "Open a Google Drive file link from the Drive browser tab.");
+        } else {
+            video.src = streamUrl;
+            video.volume = currentVolume / 100;
+            video.play().catch(() => {});
+        }
+
+        window.addEventListener("keydown", event => {
+            if (event.key === " " || event.key === "Spacebar") {
+                event.preventDefault();
+                window.watchPartyPlayer.setPaused(!video.paused);
+            }
+        });
+    </script>
+</body>
+</html>

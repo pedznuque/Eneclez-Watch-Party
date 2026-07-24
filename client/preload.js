@@ -14,6 +14,19 @@ contextBridge.exposeInMainWorld("watchParty", {
     checkForUpdates() {
         return ipcRenderer.invoke("watch-party-check-for-updates");
     },
+    getDriveMediaUrl() {
+        return ipcRenderer.invoke("watch-party-get-drive-media-url");
+    },
+    onDriveMediaUrl(callback) {
+        if (typeof callback !== "function") return () => {};
+
+        const listener = (_event, payload) => callback(payload);
+        ipcRenderer.on("watch-party-drive-media-url", listener);
+
+        return () => {
+            ipcRenderer.removeListener("watch-party-drive-media-url", listener);
+        };
+    },
     onUpdateStatus(callback) {
         if (typeof callback !== "function") return () => {};
 

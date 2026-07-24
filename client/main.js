@@ -6,6 +6,7 @@ let activeChatWebContentsId = null;
 let mainWindow = null;
 let updatePromptOpen = false;
 let isCheckingForUpdates = false;
+let latestDriveMediaUrl = null;
 const protectedSessions = new Set();
 
 const BLOCKED_REQUEST_HOSTS = [
@@ -71,6 +72,28 @@ function protectSession(session) {
 
  protectedSessions.add(session);
  session.webRequest.onBeforeRequest((details, callback) => {
+  try {
+   const parsedUrl = new URL(details.url);
+   const host = parsedUrl.hostname.toLowerCase();
+   const pathAndQuery = `${parsedUrl.pathname}${parsedUrl.search}`.toLowerCase();
+   const isDriveMedia =
+    host.includes("googleusercontent.com") ||
+    host.includes("googlevideo.com") ||
+    host.includes("usercontent.google.com") ||
+    pathAndQuery.includes("videoplayback");
+
+   if (isDriveMedia && !shouldBlockRequest(details.url)) {
+    latestDriveMediaUrl = {
+     url: details.url,
+     capturedAt: Date.now()
+    };
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+     mainWindow.webContents.send("watch-party-drive-media-url", latestDriveMediaUrl);
+    }
+   }
+  } catch {}
+
   callback({ cancel: shouldBlockRequest(details.url) });
  });
 }
@@ -243,6 +266,8 @@ ipcMain.handle("watch-party-check-for-updates", async () => {
   };
  }
 });
+
+ipcMain.handle("watch-party-get-drive-media-url", () => latestDriveMediaUrl);
 
 app.on("web-contents-created", (_event, contents) => {
  protectSession(contents.session);

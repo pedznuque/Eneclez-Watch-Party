@@ -62,6 +62,10 @@ app.get("/youtube-player.html", (req, res) => {
     res.sendFile(path.join(CLIENT_SRC_DIR, "youtube-player.html"));
 });
 
+app.get("/drive-player.html", (req, res) => {
+    res.sendFile(path.join(CLIENT_SRC_DIR, "drive-player.html"));
+});
+
 function getPublicOrigin(req) {
     const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
     const host = req.headers["x-forwarded-host"] || req.headers.host;

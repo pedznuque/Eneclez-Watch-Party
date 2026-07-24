@@ -2086,9 +2086,13 @@ function isFacebookVideoUrl(url) {
 
 function getGoogleDriveFileId(url) {
     try {
-        const parsedUrl = new URL(url);
+        const parsedUrl = new URL(url, APP_SERVER_ORIGIN);
         const parts = parsedUrl.pathname.split("/").filter(Boolean);
         const fileIndex = parts.findIndex(part => part.toLowerCase() === "d");
+
+        if (isGoogleDriveApiStreamUrl(parsedUrl.toString())) {
+            return parts[parts.length - 1] || "";
+        }
 
         if (!isGoogleDriveUrl(url)) return "";
 
@@ -2111,7 +2115,7 @@ function getGoogleDriveFileId(url) {
 }
 
 function isGoogleDriveVideoUrl(url) {
-    return Boolean(getGoogleDriveFileId(url)) || isGoogleDriveDirectMediaUrl(url);
+    return Boolean(getGoogleDriveFileId(url)) || isGoogleDriveDirectMediaUrl(url) || isGoogleDriveApiStreamUrl(url);
 }
 
 function isGoogleDriveDirectMediaUrl(url) {
@@ -2307,6 +2311,16 @@ function getGoogleDriveApiStreamUrl(url) {
     return `${APP_SERVER_ORIGIN}/api/drive/stream/${encodeURIComponent(fileId)}`;
 }
 
+function getGoogleDrivePlayerShellUrl(url) {
+    const streamUrl = isGoogleDriveApiStreamUrl(url) ? url : getGoogleDriveApiStreamUrl(url);
+    if (!streamUrl) return url;
+
+    const playerUrl = new URL("/drive-player.html", APP_SERVER_ORIGIN);
+    playerUrl.searchParams.set("stream", streamUrl);
+    playerUrl.searchParams.set("source", url);
+    return playerUrl.toString();
+}
+
 function isGoogleDrivePreviewUrl(url) {
     try {
         const parsedUrl = new URL(url);
@@ -2340,7 +2354,7 @@ function getPlayerUrl(url) {
     }
 
     if (isGoogleDriveVideoUrl(url)) {
-        return getGoogleDriveApiStreamUrl(url);
+        return getGoogleDrivePlayerShellUrl(url);
     }
 
     return url;
