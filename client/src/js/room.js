@@ -2465,7 +2465,7 @@ async function installCaptionRecorder() {
                         chunks.push(event.data);
                     }
                 };
-                recorder.start(4800);
+                recorder.start(3000);
 
                 window.__watchPartyCaptionRecorder = {
                     recorder,
@@ -2481,11 +2481,7 @@ async function installCaptionRecorder() {
                         return { ok: false, error: "Caption recorder stopped." };
                     }
 
-                    try {
-                        session.recorder.requestData();
-                    } catch {
-                        return { ok: true, empty: true };
-                    }
+                    session.recorder.requestData();
                     await new Promise(resolve => setTimeout(resolve, 220));
 
                     if (!session.chunks.length) {
@@ -2504,15 +2500,6 @@ async function installCaptionRecorder() {
                     const batchSize = 0x8000;
                     for (let index = 0; index < bytes.length; index += batchSize) {
                         binary += String.fromCharCode(...bytes.subarray(index, index + batchSize));
-                    }
-
-                    if (bytes.length < 2400) {
-                        return {
-                            ok: true,
-                            empty: true,
-                            currentTime: Number(session.video?.currentTime) || 0,
-                            paused: Boolean(session.video?.paused)
-                        };
                     }
 
                     return {
@@ -2625,7 +2612,7 @@ async function installAppAudioCaptionRecorder() {
         stream.getVideoTracks().forEach(track => {
             track.enabled = false;
         });
-        appCaptionRecorder.start(4800);
+        appCaptionRecorder.start(3000);
 
         return { ok: true };
     } catch (error) {
@@ -2646,11 +2633,7 @@ async function readAppAudioCaptionChunk() {
         };
     }
 
-    try {
-        appCaptionRecorder.requestData();
-    } catch {
-        return { ok: true, empty: true };
-    }
+    appCaptionRecorder.requestData();
     await new Promise(resolve => setTimeout(resolve, 220));
 
     if (!appCaptionChunks.length) {
@@ -2665,10 +2648,6 @@ async function readAppAudioCaptionChunk() {
 
     for (let index = 0; index < bytes.length; index += batchSize) {
         binary += String.fromCharCode(...bytes.subarray(index, index + batchSize));
-    }
-
-    if (bytes.length < 2400) {
-        return { ok: true, empty: true };
     }
 
     return {
@@ -2733,10 +2712,7 @@ async function transcribeCaptionChunk(chunk) {
             throw new Error("Caption server is not deployed yet. Deploy the latest server update.");
         }
 
-        const message = payload.error || responseText.slice(0, 160) || `Auto captions failed (${response.status}).`;
-        const error = new Error(message);
-        error.retryable = Boolean(payload.retryable) || response.status === 400 || response.status === 422 || response.status === 429;
-        throw error;
+        throw new Error(payload.error || responseText.slice(0, 160) || `Auto captions failed (${response.status}).`);
     }
 
     return String(payload.text || "").trim();
@@ -2786,9 +2762,9 @@ async function checkCaptionServerReady() {
     }
 }
 
-function scheduleCaptionChunk(token, delay = 4200) {
+function scheduleCaptionChunk(token) {
     clearTimeout(autoCaptionPollTimer);
-    autoCaptionPollTimer = setTimeout(() => processCaptionChunk(token), delay);
+    autoCaptionPollTimer = setTimeout(() => processCaptionChunk(token), 3800);
 }
 
 async function processCaptionChunk(token) {
@@ -2800,8 +2776,8 @@ async function processCaptionChunk(token) {
     if (!chunk?.ok) {
         autoCaptionsLoading = false;
         setAutoCaptionsButtonState();
-        setAutoCaptionOverlay(chunk?.error || "Auto captions listening...", { note: true });
-        scheduleCaptionChunk(token, 5200);
+        setAutoCaptionOverlay(chunk?.error || "Auto captions stopped.", { note: true });
+        scheduleCaptionChunk(token);
         return;
     }
 
@@ -2833,11 +2809,7 @@ async function processCaptionChunk(token) {
 
         autoCaptionsLoading = false;
         setAutoCaptionsButtonState();
-        if (error.retryable) {
-            setAutoCaptionOverlay("Listening for clear speech...", { note: true });
-        } else {
-            setAutoCaptionOverlay(error.message || "Auto captions failed.", { note: true });
-        }
+        setAutoCaptionOverlay(error.message || "Auto captions failed.", { note: true });
     }
 
     scheduleCaptionChunk(token);
@@ -2860,13 +2832,13 @@ async function startLiveAutoCaptions() {
         return;
     }
 
-    let setup = await installAppAudioCaptionRecorder();
-    autoCaptionMode = setup?.ok ? "app-audio" : "";
+    let setup = await installCaptionRecorder();
+    autoCaptionMode = setup?.ok ? "webview-video" : "";
 
     if (!setup?.ok) {
-        setAutoCaptionOverlay("Starting video captions...", { note: true });
-        setup = await installCaptionRecorder();
-        autoCaptionMode = setup?.ok ? "webview-video" : "";
+        setAutoCaptionOverlay("Starting system audio captions...", { note: true });
+        setup = await installAppAudioCaptionRecorder();
+        autoCaptionMode = setup?.ok ? "app-audio" : "";
 
         if (!setup?.ok) {
             autoCaptionsLoading = false;

@@ -410,8 +410,7 @@ app.post("/api/captions/transcribe-chunk", async (req, res) => {
 
     if (!audioBase64 || audioBase64.length < 200) {
         res.status(400).json({
-            error: "No audio was captured yet.",
-            retryable: true
+            error: "No audio was captured yet."
         });
         return;
     }
@@ -420,8 +419,7 @@ app.post("/api/captions/transcribe-chunk", async (req, res) => {
         const audioBuffer = Buffer.from(audioBase64, "base64");
         if (!audioBuffer.length) {
             res.status(400).json({
-                error: "Captured audio was empty.",
-                retryable: true
+                error: "Captured audio was empty."
             });
             return;
         }
@@ -448,10 +446,8 @@ app.post("/api/captions/transcribe-chunk", async (req, res) => {
 
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
-            const detail = payload.error?.message || payload.error || "Caption transcription failed.";
             res.status(response.status).json({
-                error: detail,
-                retryable: response.status === 400 || response.status === 422 || response.status === 429
+                error: payload.error?.message || payload.error || "Caption transcription failed."
             });
             return;
         }
