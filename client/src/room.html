@@ -38,7 +38,7 @@
                 </div>
 
                 <div class="browser-controls is-hidden-control">
-                    <input id="mediaUrl" placeholder="Paste a Bilibili, YouTube, or Dailymotion link">
+                    <input id="mediaUrl" placeholder="Paste a Bilibili, YouTube, Dailymotion, Facebook, or Drive link">
                     <button id="loadMedia" class="primary-button">Load Player</button>
                     <button id="addToQueue" class="ghost-button">Queue</button>
                 </div>
@@ -48,7 +48,7 @@
                         <webview
                             id="playerWebview"
                             src="about:blank"
-                            partition="persist:bilibili"
+                            partition="persist:eneclez-browser"
                             preload="./js/youtube-adblock-preload.js"
                             webpreferences="contextIsolation=false"
                             allowpopups="false">
@@ -61,13 +61,28 @@
                             </div>
                             <p class="empty-kicker">Your private theater</p>
                             <h3>Select a video to start watching</h3>
-                            <p>Browse Bilibili, YouTube, Dailymotion, or Facebook below, then choose a supported video for everyone in the room.</p>
+                            <p>Browse Bilibili, YouTube, Dailymotion, Facebook, or Drive below, then choose a supported video for everyone in the room.</p>
                         </div>
 
                         <div id="playerLoadingState" class="player-loading-state" hidden>
                             <span class="player-loading-spinner" aria-hidden="true"></span>
                             <strong>Loading video</strong>
                             <small>Preparing the player for everyone in the room.</small>
+                        </div>
+
+                        <div id="playerErrorState" class="player-error-state" hidden>
+                            <strong>Video could not play</strong>
+                            <small id="playerErrorText">The player could not load this link.</small>
+                            <div class="player-error-actions">
+                                <button id="retryPlayer" class="primary-button" type="button">Retry</button>
+                                <button id="openPlayerExternal" class="ghost-button" type="button">Open link</button>
+                            </div>
+                        </div>
+
+                        <div id="driveContinueState" class="drive-continue-state" hidden>
+                            <strong>Continue Google Drive</strong>
+                            <small>Google needs one click before it can stream this file.</small>
+                            <button id="continueDrivePlayer" class="primary-button" type="button">Download anyway</button>
                         </div>
 
                         <button id="playerFullscreen" class="player-fullscreen-button" title="Enter fullscreen" aria-label="Enter fullscreen">
@@ -221,6 +236,7 @@
                         <button id="browseYoutube" class="browser-site-option" type="button">YouTube</button>
                         <button id="browseDailymotion" class="browser-site-option" type="button">Dailymotion</button>
                         <button id="browseFacebook" class="browser-site-option" type="button">Facebook</button>
+                        <button id="browseDrive" class="browser-site-option" type="button">Drive</button>
                     </div>
                     <div class="browser-nav" aria-label="Browser navigation">
                         <button id="browserBack" class="icon-button" title="Back" aria-label="Back">
@@ -245,10 +261,23 @@
                 </div>
 
                 <div id="browserPane" class="media-container browser-container">
+                    <div id="driveLinkControls" class="drive-link-controls" hidden>
+                        <div class="drive-link-card">
+                            <strong>Google Drive video</strong>
+                            <input id="driveLinkInput" placeholder="Paste Google Drive video link">
+                            <div class="drive-link-actions">
+                                <button id="openDriveLink" class="primary-button" type="button">Open in browser</button>
+                                <button id="playDriveLink" class="primary-button" type="button">Play</button>
+                                <button id="queueDriveLink" class="ghost-button" type="button">Queue</button>
+                                <button id="openDriveLogin" class="ghost-button" type="button">Sign in Drive</button>
+                            </div>
+                            <small>Use a Drive file link shared with view access.</small>
+                        </div>
+                    </div>
                     <webview
                         id="browserWebview"
                         src="https://www.bilibili.tv/en"
-                        partition="persist:bilibili-browser"
+                        partition="persist:eneclez-browser"
                         preload="./js/youtube-adblock-preload.js"
                         webpreferences="contextIsolation=false"
                         allowpopups="true">

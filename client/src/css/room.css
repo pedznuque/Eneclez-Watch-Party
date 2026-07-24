@@ -238,6 +238,78 @@ h2 {
     gap: 8px;
 }
 
+.drive-link-controls {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    top: 16px;
+    z-index: 8;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+.drive-link-controls[hidden] {
+    display: none !important;
+}
+
+.drive-link-card {
+    width: min(520px, 100%);
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 16px;
+    background: rgba(10, 14, 21, .88);
+    box-shadow: 0 18px 54px rgba(0, 0, 0, .32);
+    pointer-events: auto;
+}
+
+.drive-link-card strong {
+    font-size: 16px;
+}
+
+.drive-link-card input {
+    min-height: 44px;
+    padding: 12px 14px;
+    font-size: 14px;
+}
+
+.drive-link-actions {
+    display: grid;
+    grid-template-columns: 1fr .8fr .8fr auto;
+    gap: 8px;
+}
+
+.drive-link-actions button {
+    min-height: 42px;
+}
+
+.browser-container.is-drive-video-page #browserWebview {
+    opacity: .28;
+    pointer-events: none !important;
+}
+
+.browser-container.is-drive-video-page::after {
+    content: "Click here to play this Drive video in the room";
+    position: absolute;
+    left: 50%;
+    top: 56%;
+    z-index: 7;
+    max-width: min(420px, calc(100% - 48px));
+    padding: 12px 16px;
+    border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 999px;
+    color: #fff;
+    background: rgba(8, 12, 18, .72);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, .28);
+    font-size: 13px;
+    font-weight: 900;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
 .browser-site-toggle {
     display: inline-flex;
     align-items: center;
@@ -1133,6 +1205,11 @@ button:disabled {
     .browser-nav button {
         flex: 1;
     }
+
+    .drive-link-controls {
+        width: 100%;
+        grid-template-columns: 1fr;
+    }
 }
 
 
@@ -1309,6 +1386,74 @@ button:disabled {
 
 .player-loading-state[hidden] {
     display: none;
+}
+
+.player-error-state {
+    position: absolute;
+    inset: 0;
+    z-index: 19;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 10px;
+    padding: 28px;
+    text-align: center;
+    background:
+        radial-gradient(circle at 50% 38%, rgba(239, 71, 111, .14), transparent 30%),
+        linear-gradient(145deg, rgba(8, 12, 18, .96), rgba(17, 23, 34, .94));
+}
+
+.player-error-state[hidden] {
+    display: none;
+}
+
+.player-error-state strong {
+    font-size: 17px;
+}
+
+.player-error-state small {
+    max-width: 520px;
+    color: var(--muted);
+    line-height: 1.5;
+}
+
+.player-error-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.drive-continue-state {
+    position: absolute;
+    left: 50%;
+    top: 28px;
+    z-index: 24;
+    width: min(390px, calc(100% - 36px));
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 16px;
+    color: #fff;
+    text-align: center;
+    background: rgba(8, 12, 18, .86);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .34);
+    transform: translateX(-50%);
+}
+
+.drive-continue-state[hidden] {
+    display: none;
+}
+
+.drive-continue-state small {
+    color: var(--muted);
+}
+
+.drive-continue-state button {
+    min-height: 38px;
+    padding: 0 18px;
 }
 
 .player-loading-spinner {
@@ -4392,8 +4537,48 @@ body.chat-input-active #browserWebview {
     pointer-events: none !important;
 }
 
+.player-container.is-drive-player:not(.is-empty) #playerWebview {
+    pointer-events: auto !important;
+}
+
+.player-container.is-drive-browser-player:not(.is-empty) #playerWebview {
+    display: none !important;
+}
+
+.player-container.is-drive-browser-player:not(.is-empty) #browserWebview {
+    display: flex !important;
+    pointer-events: auto !important;
+    opacity: 1 !important;
+}
+
+.browser-container.is-browser-promoted {
+    min-height: 180px;
+    display: grid;
+    place-items: center;
+}
+
+.browser-container.is-browser-promoted::before {
+    content: "Drive is playing in the player";
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(17, 23, 34, .7);
+    font-size: 12px;
+    font-weight: 900;
+}
+
 .player-fullscreen-button {
     pointer-events: auto !important;
+}
+
+.browser-container.is-drive-browser .drive-link-controls {
+    display: grid !important;
+}
+
+.browser-container.is-drive-video-page .drive-link-controls {
+    transform: translateY(-8px) scale(.94);
+    opacity: .82;
 }
 
 /* App feedback animations */

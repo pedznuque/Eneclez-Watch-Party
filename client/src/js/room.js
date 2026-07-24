@@ -59,6 +59,13 @@ const browseBilibiliButton = document.getElementById("browseBilibili");
 const browseYoutubeButton = document.getElementById("browseYoutube");
 const browseDailymotionButton = document.getElementById("browseDailymotion");
 const browseFacebookButton = document.getElementById("browseFacebook");
+const browseDriveButton = document.getElementById("browseDrive");
+const driveLinkControls = document.getElementById("driveLinkControls");
+const driveLinkInput = document.getElementById("driveLinkInput");
+const openDriveLinkButton = document.getElementById("openDriveLink");
+const playDriveLinkButton = document.getElementById("playDriveLink");
+const queueDriveLinkButton = document.getElementById("queueDriveLink");
+const openDriveLoginButton = document.getElementById("openDriveLogin");
 const playerFullscreenButton = document.getElementById("playerFullscreen");
 const queueListEl = document.getElementById("queueList");
 const queueCountEl = document.getElementById("queueCount");
@@ -67,6 +74,12 @@ const playPauseButton = document.getElementById("playPause");
 const stopPlayerButton = document.getElementById("stopPlayer");
 const playerEmptyStateEl = document.getElementById("playerEmptyState");
 const playerLoadingStateEl = document.getElementById("playerLoadingState");
+const playerErrorStateEl = document.getElementById("playerErrorState");
+const playerErrorTextEl = document.getElementById("playerErrorText");
+const retryPlayerButton = document.getElementById("retryPlayer");
+const openPlayerExternalButton = document.getElementById("openPlayerExternal");
+const driveContinueStateEl = document.getElementById("driveContinueState");
+const continueDrivePlayerButton = document.getElementById("continueDrivePlayer");
 const browserLoadingStateEl = document.getElementById("browserLoadingState");
 const cleanPlayerButton = document.getElementById("cleanPlayer");
 const playbackTimeEl = document.getElementById("playbackTime");
@@ -82,6 +95,11 @@ let controllerUsers = new Set();
 let lastPlaybackState = null;
 let applyingRemotePlayback = false;
 let selectedVideoUrl = "";
+let driveFallbackAttemptedFor = "";
+let driveConfirmAttemptedFor = "";
+let capturedDriveMediaUrl = "";
+let capturedDriveMediaAt = 0;
+let driveBrowserPromotedToPlayer = false;
 let handlingBrowserVideoUrl = "";
 let browserVideoPromptOpen = false;
 let lastPromptVideoIdentity = "";
@@ -140,7 +158,20 @@ const BILIBILI_HOME = "https://www.bilibili.tv/en";
 const YOUTUBE_HOME = "https://www.youtube.com/";
 const DAILYMOTION_HOME = "https://www.dailymotion.com/";
 const FACEBOOK_HOME = "https://www.facebook.com/watch/";
+const DRIVE_HOME = "https://drive.google.com/";
 let activeBrowserHome = BILIBILI_HOME;
+
+window.watchParty?.onDriveMediaUrl?.(payload => {
+    const url = payload?.url || "";
+    if (!isGoogleDriveDirectMediaUrl(url)) return;
+
+    capturedDriveMediaUrl = url;
+    capturedDriveMediaAt = Number(payload?.capturedAt) || Date.now();
+
+    if (activeBrowserHome === DRIVE_HOME) {
+        setMediaStatus("Drive stream captured", "is-online");
+    }
+});
 
 function setPeoplePopoverVisible(isVisible) {
     if (!peoplePopoverEl || !peopleToggleButton) return;
@@ -639,6 +670,11 @@ function normalizedVideoIdentity(url) {
             return videoId ? `dailymotion:${videoId}` : `${host}${path}`;
         }
 
+        if (isGoogleDriveUrl(url)) {
+            const fileId = getGoogleDriveFileId(url);
+            return fileId ? `drive:${fileId}` : `${host}${path}`;
+        }
+
         return `${host}${path}`;
     } catch {
         return "";
@@ -837,6 +873,9 @@ function setPlayerEmptyState(isEmpty) {
     const empty = Boolean(isEmpty);
     playerPane.classList.toggle("is-empty", empty);
     playerEmptyStateEl.hidden = !empty;
+    if (empty && playerErrorStateEl) {
+        playerErrorStateEl.hidden = true;
+    }
     playerFullscreenButton.disabled = empty;
     if (empty) {
         clearInterval(playerReadyCheckTimer);
@@ -848,6 +887,39 @@ function setPlayerEmptyState(isEmpty) {
     }
 }
 
+function isDrivePlayerMode() {
+    const url = selectedVideoUrl || playerWebview.src || "";
+    return isGoogleDriveUrl(url) && !isGoogleDriveDirectMediaUrl(url);
+}
+
+function setPlayerError(message) {
+    clearInterval(playerReadyCheckTimer);
+    playerReadyCheckTimer = null;
+    clearTimeout(playerLoadingReleaseTimer);
+    playerLoadingReleaseTimer = null;
+    setPlayerLoading(false);
+    setPlayerEmptyState(false);
+    if (playerErrorTextEl) {
+        playerErrorTextEl.textContent = message || "The player could not load this link.";
+    }
+    if (playerErrorStateEl) {
+        playerErrorStateEl.hidden = false;
+    }
+    setMediaStatus("Load failed", "is-offline");
+}
+
+function clearPlayerError() {
+    if (playerErrorStateEl) {
+        playerErrorStateEl.hidden = true;
+    }
+}
+
+function setDriveContinueVisible(isVisible) {
+    if (driveContinueStateEl) {
+        driveContinueStateEl.hidden = !isVisible;
+    }
+}
+
 function setPlayerLoading(isLoading, message = "Loading video") {
     if (!playerLoadingStateEl) return;
 
@@ -855,6 +927,11 @@ function setPlayerLoading(isLoading, message = "Loading video") {
 
     if (isLoading && !playerPane.classList.contains("is-loading")) {
         playerLoadingStartedAt = playbackClockNow();
+    }
+
+    if (isLoading) {
+        clearPlayerError();
+        setDriveContinueVisible(false);
     }
 
     playerPane.classList.toggle("is-loading", Boolean(isLoading && !youtubeLoad));
@@ -870,7 +947,7 @@ function setPlayerLoading(isLoading, message = "Loading video") {
     const title = playerLoadingStateEl.querySelector("strong");
     if (title) title.textContent = message;
 
-    if (isLoading) {
+    if (isLoading && !isDrivePlayerMode()) {
         mutePlayerMediaDuringLoading();
     } else {
         restorePlayerMediaAfterLoading();
@@ -1164,6 +1241,7 @@ function waitForPlayerReady() {
     }
 
     const youtubeLoad = isYoutubeUrl(selectedVideoUrl || playerWebview.src || "");
+    const driveLoad = isGoogleDriveUrl(selectedVideoUrl || playerWebview.src || "");
     const lightYoutubePlayer = isLightYoutubePlayerUrl(playerWebview.src);
     let checks = 0;
     const finishReady = () => {
@@ -1190,6 +1268,13 @@ function waitForPlayerReady() {
         }, releaseDelay);
     }
 
+    if (driveLoad) {
+        clearTimeout(playerLoadingReleaseTimer);
+        playerLoadingReleaseTimer = setTimeout(() => {
+            finishReady();
+        }, 900);
+    }
+
     playerReadyCheckTimer = setInterval(async () => {
         checks += 1;
 
@@ -1201,10 +1286,10 @@ function waitForPlayerReady() {
             return;
         }
 
-        if (!lightYoutubePlayer && (!youtubeLoad || checks < 8)) {
+        if (!driveLoad && !lightYoutubePlayer && (!youtubeLoad || checks < 8)) {
             mutePlayerMediaDuringLoading();
         }
-        if (!lightYoutubePlayer && checks % 2 === 0) {
+        if (!driveLoad && !lightYoutubePlayer && checks % 2 === 0) {
             cleanPlayerView();
         }
 
@@ -1228,7 +1313,7 @@ function waitForPlayerReady() {
             return;
         }
 
-        if (checks > (youtubeLoad ? 16 : 42)) {
+        if (checks > (youtubeLoad ? 16 : driveLoad ? 12 : 42)) {
             const hasPlayableVideo = await hasPlayerVideoWithData();
 
             if (hasPlayableVideo) {
@@ -1324,9 +1409,13 @@ function syncWebviewToPane(pane, webview) {
 
 function syncPlayerWebviewSize() {
     syncWebviewToPane(playerPane, playerWebview);
+    if (driveBrowserPromotedToPlayer) {
+        syncWebviewToPane(playerPane, browserWebview);
+    }
 }
 
 function syncBrowserWebviewSize() {
+    if (driveBrowserPromotedToPlayer) return;
     syncWebviewToPane(browserPane, browserWebview);
 }
 
@@ -1348,6 +1437,141 @@ browserPaneResizeObserver.observe(browserPane);
 window.addEventListener("resize", syncAllWebviewSizes);
 requestAnimationFrame(syncAllWebviewSizes);
 setPlayerEmptyState(true);
+
+function sameDriveFileUrl(leftUrl, rightUrl) {
+    const leftId = getGoogleDriveFileId(leftUrl);
+    const rightId = getGoogleDriveFileId(rightUrl);
+
+    if (leftId && rightId) return leftId === rightId;
+
+    return isSameVideoUrl(leftUrl, rightUrl);
+}
+
+function promoteDriveBrowserToPlayer(url = "") {
+    if (!browserWebview || !playerPane || !browserPane) return false;
+
+    const browserUrl = getCurrentBrowserUrl();
+    const targetUrl = url || browserUrl;
+
+    if (!isGoogleDriveVideoUrl(targetUrl)) return false;
+    if (!browserUrl || !sameDriveFileUrl(browserUrl, targetUrl)) return false;
+
+    if (!driveBrowserPromotedToPlayer) {
+        playerPane.appendChild(browserWebview);
+        driveBrowserPromotedToPlayer = true;
+    }
+
+    playerWebview.src = "about:blank";
+    playerWebview.hidden = true;
+    playerPane.classList.add("is-drive-player", "is-drive-browser-player");
+    browserPane.classList.add("is-browser-promoted");
+    browserPane.classList.remove("is-loading");
+
+    setPlayerEmptyState(false);
+    setPlayerLoading(false);
+    clearPlayerError();
+    setDriveContinueVisible(false);
+    syncPlayerWebviewSize();
+    cleanPromotedDrivePlayer();
+    setMediaStatus("Drive playing from browser", "is-online");
+    updateHostControls();
+    return true;
+}
+
+async function cleanPromotedDrivePlayer() {
+    if (!driveBrowserPromotedToPlayer) return false;
+
+    try {
+        const cleaned = await browserWebview.executeJavaScript(`
+            (() => {
+                const styleId = "watch-party-drive-theater";
+                const css = \`
+                    html,
+                    body {
+                        width: 100vw !important;
+                        height: 100vh !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        overflow: hidden !important;
+                        background: #000 !important;
+                    }
+
+                    [role="banner"],
+                    header,
+                    nav,
+                    [aria-label="Toolbar"],
+                    [class*="header"],
+                    [class*="toolbar"],
+                    [class*="Toolbar"],
+                    [class*="topbar"],
+                    [class*="TopBar"] {
+                        display: none !important;
+                    }
+
+                    video {
+                        position: fixed !important;
+                        inset: 0 !important;
+                        width: 100vw !important;
+                        height: 100vh !important;
+                        max-width: none !important;
+                        max-height: none !important;
+                        object-fit: contain !important;
+                        object-position: center center !important;
+                        background: #000 !important;
+                        z-index: 2147483647 !important;
+                    }
+                \`;
+
+                let style = document.getElementById(styleId);
+                if (!style) {
+                    style = document.createElement("style");
+                    style.id = styleId;
+                    document.documentElement.appendChild(style);
+                }
+                style.textContent = css;
+
+                const video = document.querySelector("video");
+                if (!video) return false;
+
+                video.style.position = "fixed";
+                video.style.inset = "0";
+                video.style.width = "100vw";
+                video.style.height = "100vh";
+                video.style.maxWidth = "none";
+                video.style.maxHeight = "none";
+                video.style.objectFit = "contain";
+                video.style.objectPosition = "center center";
+                video.style.zIndex = "2147483647";
+                video.controls = true;
+                video.scrollIntoView({ block: "center", inline: "center" });
+                return true;
+            })()
+        `);
+
+        [250, 750, 1500, 3000].forEach(delay => {
+            setTimeout(() => {
+                if (driveBrowserPromotedToPlayer) {
+                    cleanPromotedDrivePlayer();
+                }
+            }, delay);
+        });
+
+        return Boolean(cleaned);
+    } catch {
+        return false;
+    }
+}
+
+function restoreDriveBrowserToBrowserPane() {
+    if (!driveBrowserPromotedToPlayer || !browserWebview || !browserPane) return;
+
+    browserPane.appendChild(browserWebview);
+    driveBrowserPromotedToPlayer = false;
+    browserPane.classList.remove("is-browser-promoted");
+    playerPane.classList.remove("is-drive-browser-player");
+    playerWebview.hidden = false;
+    requestAnimationFrame(syncAllWebviewSizes);
+}
 
 codeEl.innerText = roomCode || "------";
 mediaUrlInput.value = activeBrowserHome;
@@ -1754,17 +1978,39 @@ function isFacebookUrl(url) {
     }
 }
 
+function isGoogleDriveUrl(url) {
+    try {
+        const parsedUrl = new URL(url);
+        const host = parsedUrl.hostname.replace(/^www\./, "").toLowerCase();
+        const allowedHosts = ["drive.google.com", "docs.google.com", "googleusercontent.com", "googlevideo.com", "usercontent.google.com"];
+
+        return allowedHosts.some(allowedHost => host === allowedHost || host.endsWith(`.${allowedHost}`));
+    } catch {
+        return false;
+    }
+}
+
 function isSupportedMediaUrl(url) {
-    return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url);
+    return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url) || isGoogleDriveApiStreamUrl(url);
 }
 
 function isBrowserAuthUrl(url) {
     try {
         const parsedUrl = new URL(url);
+        if (
+            parsedUrl.origin === APP_SERVER_ORIGIN &&
+            parsedUrl.pathname.toLowerCase().startsWith("/api/drive/")
+        ) {
+            return true;
+        }
+
         const host = parsedUrl.hostname.replace(/^www\./, "").toLowerCase();
         const allowedHosts = [
             "accounts.google.com",
             "facebook.com",
+            "drive.google.com",
+            "docs.google.com",
+            "googleusercontent.com",
             "google.com",
             "passport.bilibili.com",
             "passport.bilibili.tv"
@@ -1838,6 +2084,88 @@ function isFacebookVideoUrl(url) {
     }
 }
 
+function getGoogleDriveFileId(url) {
+    try {
+        const parsedUrl = new URL(url);
+        const parts = parsedUrl.pathname.split("/").filter(Boolean);
+        const fileIndex = parts.findIndex(part => part.toLowerCase() === "d");
+
+        if (!isGoogleDriveUrl(url)) return "";
+
+        if (parsedUrl.searchParams.has("id")) {
+            return parsedUrl.searchParams.get("id") || "";
+        }
+
+        if (parts[0]?.toLowerCase() === "file" && fileIndex >= 0) {
+            return parts[fileIndex + 1] || "";
+        }
+
+        if (parts[0]?.toLowerCase() === "uc") {
+            return parsedUrl.searchParams.get("id") || "";
+        }
+
+        return "";
+    } catch {
+        return "";
+    }
+}
+
+function isGoogleDriveVideoUrl(url) {
+    return Boolean(getGoogleDriveFileId(url)) || isGoogleDriveDirectMediaUrl(url);
+}
+
+function isGoogleDriveDirectMediaUrl(url) {
+    try {
+        const parsedUrl = new URL(url);
+        const host = parsedUrl.hostname.toLowerCase();
+        const path = parsedUrl.pathname.toLowerCase();
+
+        return (
+            host.includes("googleusercontent.com") ||
+            host.includes("googlevideo.com") ||
+            host.includes("usercontent.google.com") ||
+            path.includes("videoplayback")
+        );
+    } catch {
+        return false;
+    }
+}
+
+function isGoogleDriveApiStreamUrl(url) {
+    try {
+        const parsedUrl = new URL(url, window.location.href);
+        return parsedUrl.origin === APP_SERVER_ORIGIN &&
+            parsedUrl.pathname.toLowerCase().startsWith("/api/drive/stream/");
+    } catch {
+        return false;
+    }
+}
+
+function isIgnorableGoogleAssetUrl(url) {
+    try {
+        const parsedUrl = new URL(url);
+        const host = parsedUrl.hostname.toLowerCase();
+        const path = parsedUrl.pathname.toLowerCase();
+
+        return (
+            (
+                host.endsWith("googleusercontent.com") ||
+                host.endsWith("gstatic.com") ||
+                host.endsWith("google.com")
+            ) &&
+            (
+                host.startsWith("lh") ||
+                path.match(/\.(png|jpe?g|gif|webp|svg|ico)$/i) ||
+                path.includes("/ogw/") ||
+                path.includes("/favicon") ||
+                path.includes("/avatar")
+            )
+        );
+    } catch {
+        return false;
+    }
+}
+
 function isYoutubePlayerShellUrl(url) {
     try {
         const parsedUrl = new URL(url, window.location.href);
@@ -1875,7 +2203,7 @@ function isFacebookEmbedUrl(url) {
 }
 
 function isSupportedVideoUrl(url) {
-    return isBilibiliVideoUrl(url) || isYoutubeVideoUrl(url) || isDailymotionVideoUrl(url) || isFacebookVideoUrl(url);
+    return isBilibiliVideoUrl(url) || isYoutubeVideoUrl(url) || isDailymotionVideoUrl(url) || isFacebookVideoUrl(url) || isGoogleDriveVideoUrl(url) || isGoogleDriveApiStreamUrl(url);
 }
 
 function getYoutubeVideoId(url) {
@@ -1958,7 +2286,41 @@ function getFacebookEmbedUrl(url) {
     }
 }
 
+function getGoogleDrivePreviewUrl(url) {
+    const fileId = getGoogleDriveFileId(url);
+    if (!fileId) return url;
+
+    return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
+}
+
+function getGoogleDriveDirectUrl(url) {
+    const fileId = getGoogleDriveFileId(url);
+    if (!fileId) return url;
+
+    return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+}
+
+function getGoogleDriveApiStreamUrl(url) {
+    const fileId = getGoogleDriveFileId(url);
+    if (!fileId) return url;
+
+    return `${APP_SERVER_ORIGIN}/api/drive/stream/${encodeURIComponent(fileId)}`;
+}
+
+function isGoogleDrivePreviewUrl(url) {
+    try {
+        const parsedUrl = new URL(url);
+        return isGoogleDriveUrl(url) && parsedUrl.pathname.toLowerCase().includes("/preview");
+    } catch {
+        return false;
+    }
+}
+
 function getPlayerUrl(url) {
+    if (isGoogleDriveDirectMediaUrl(url)) {
+        return url;
+    }
+
     if (isYoutubeVideoUrl(url)) {
         const videoId = getYoutubeVideoId(url);
 
@@ -1977,13 +2339,128 @@ function getPlayerUrl(url) {
         return getFacebookEmbedUrl(url) || url;
     }
 
+    if (isGoogleDriveVideoUrl(url)) {
+        return getGoogleDriveApiStreamUrl(url);
+    }
+
     return url;
 }
 
 function loadPlayerWebviewUrl(url) {
     const playerUrl = getPlayerUrl(url);
 
+    if (!isGoogleDriveUrl(url) || isGoogleDriveDirectMediaUrl(url)) {
+        restoreDriveBrowserToBrowserPane();
+    }
+
+    clearPlayerError();
+    if (!isGoogleDriveUrl(url)) {
+        driveFallbackAttemptedFor = "";
+    }
+    playerPane.classList.toggle("is-drive-player", isGoogleDriveUrl(url));
     playerWebview.src = playerUrl;
+}
+
+function loadDriveFallbackPlayer(reason = "Drive preview failed") {
+    setMediaStatus(reason, "is-offline");
+    return false;
+}
+
+async function continueDriveDownloadConfirmation() {
+    if (!isDrivePlayerMode() || !selectedVideoUrl) return false;
+    if (driveConfirmAttemptedFor === selectedVideoUrl) return false;
+
+    try {
+        const didContinue = await playerWebview.executeJavaScript(`
+            (() => {
+                const text = (document.body?.innerText || "").toLowerCase();
+                const isConfirmPage =
+                    text.includes("google drive can't scan this file for viruses") ||
+                    text.includes("download anyway") ||
+                    text.includes("too large for google to scan");
+
+                if (!isConfirmPage) return false;
+
+                const candidates = Array.from(document.querySelectorAll("a, button, input[type='submit']"));
+                const target = candidates.find(element =>
+                    /download anyway/i.test(element.innerText || element.value || element.getAttribute("aria-label") || "")
+                );
+
+                if (target) {
+                    target.click();
+                    return true;
+                }
+
+                const form = document.querySelector("form");
+                if (form) {
+                    form.submit();
+                    return true;
+                }
+
+                return false;
+            })()
+        `);
+
+        if (didContinue) {
+            driveConfirmAttemptedFor = selectedVideoUrl;
+            setPlayerLoading(true, "Continuing Drive download");
+            setMediaStatus("Continuing Drive download", "");
+            return true;
+        }
+    } catch {}
+
+    return false;
+}
+
+async function isDriveDownloadConfirmationPage() {
+    if (!isDrivePlayerMode() || playerWebview.src === "about:blank") return false;
+
+    try {
+        return Boolean(await playerWebview.executeJavaScript(`
+            (() => {
+                const text = (document.body?.innerText || "").toLowerCase();
+                return text.includes("google drive can't scan this file for viruses") ||
+                    text.includes("download anyway") ||
+                    text.includes("too large for google to scan");
+            })()
+        `));
+    } catch {
+        return false;
+    }
+}
+
+async function inspectDrivePlayerPage() {
+    if (!isDrivePlayerMode() || playerWebview.src === "about:blank") return;
+
+    try {
+        if (await isDriveDownloadConfirmationPage()) {
+            setPlayerLoading(false);
+            setDriveContinueVisible(true);
+            setMediaStatus("Drive needs confirmation", "is-offline");
+            return;
+        }
+
+        const result = await playerWebview.executeJavaScript(`
+            (() => {
+                const text = (document.body?.innerText || "").toLowerCase();
+                const hasVideo = Boolean(document.querySelector("video"));
+                const blockedText =
+                    text.includes("no preview available") ||
+                    text.includes("couldn't preview") ||
+                    text.includes("could not preview") ||
+                    text.includes("you need access") ||
+                    text.includes("request access") ||
+                    text.includes("sign in") ||
+                    text.includes("too many users have viewed or downloaded");
+
+                return { hasVideo, blockedText, text: text.slice(0, 220) };
+            })()
+        `);
+
+        if (result?.blockedText && !result?.hasVideo) {
+            setMediaStatus("Drive preview needs interaction", "is-offline");
+        }
+    } catch {}
 }
 
 function getYoutubeEmbedFallbackUrl(url) {
@@ -2016,7 +2493,7 @@ function loadYoutubeEmbedFallbackPlayer() {
 }
 
 function supportedSitesLabel() {
-    return "Bilibili, YouTube, Dailymotion, or Facebook";
+    return "Bilibili, YouTube, Dailymotion, Facebook, or Google Drive";
 }
 
 function getSupportedMediaUrl() {
@@ -2058,7 +2535,11 @@ function openPlayerFromUrl(url) {
     }
 
     selectedVideoUrl = url;
+    driveFallbackAttemptedFor = "";
+    driveConfirmAttemptedFor = "";
     mediaUrlInput.value = url;
+    loadPlayerWebviewUrl(url);
+    setMediaStatus("Loading", "");
 
     socket.emit("loadMedia", {
         room: roomCode,
@@ -2147,11 +2628,14 @@ function resetBrowserToHome() {
 }
 
 function setBrowserSite(site, options = {}) {
+    restoreDriveBrowserToBrowserPane();
+
     const homes = {
         bilibili: BILIBILI_HOME,
         youtube: YOUTUBE_HOME,
         dailymotion: DAILYMOTION_HOME,
-        facebook: FACEBOOK_HOME
+        facebook: FACEBOOK_HOME,
+        drive: DRIVE_HOME
     };
 
     activeBrowserHome = homes[site] || BILIBILI_HOME;
@@ -2160,8 +2644,24 @@ function setBrowserSite(site, options = {}) {
     browseYoutubeButton.classList.toggle("is-active", activeBrowserHome === YOUTUBE_HOME);
     browseDailymotionButton.classList.toggle("is-active", activeBrowserHome === DAILYMOTION_HOME);
     browseFacebookButton.classList.toggle("is-active", activeBrowserHome === FACEBOOK_HOME);
+    browseDriveButton?.classList.toggle("is-active", activeBrowserHome === DRIVE_HOME);
+    browserPane?.classList.toggle("is-drive-browser", activeBrowserHome === DRIVE_HOME);
+    browserPane?.classList.remove("is-drive-video-page");
+    if (driveLinkControls) {
+        driveLinkControls.hidden = activeBrowserHome !== DRIVE_HOME;
+    }
 
     if (options.load !== false) {
+        if (activeBrowserHome === DRIVE_HOME) {
+            if (typeof browserWebview.loadURL === "function") {
+                browserWebview.loadURL(DRIVE_HOME);
+            } else {
+                browserWebview.src = DRIVE_HOME;
+            }
+            mediaUrlInput.value = driveLinkInput?.value.trim() || "";
+            return;
+        }
+
         if (typeof browserWebview.loadURL === "function") {
             browserWebview.loadURL(activeBrowserHome);
         } else {
@@ -2170,6 +2670,159 @@ function setBrowserSite(site, options = {}) {
 
         mediaUrlInput.value = activeBrowserHome;
     }
+}
+
+function getDriveLinkFromInput() {
+    const rawUrl = driveLinkInput?.value.trim() || "";
+
+    if (!rawUrl) {
+        setMediaStatus("Paste a Drive link", "is-offline");
+        driveLinkInput?.focus();
+        return "";
+    }
+
+    const normalizedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+
+    try {
+        const parsedUrl = new URL(normalizedUrl);
+
+        if (!isGoogleDriveUrl(parsedUrl.toString())) {
+            setMediaStatus("Use a Google Drive link", "is-offline");
+            return "";
+        }
+
+        return parsedUrl.toString();
+    } catch {
+        setMediaStatus("Invalid Drive link", "is-offline");
+        return "";
+    }
+}
+
+function getCurrentBrowserUrl() {
+    return browserWebview.getURL?.() || browserWebview.src || "";
+}
+
+function updateDriveBrowserCaptureState() {
+    const isDriveVideoPage = activeBrowserHome === DRIVE_HOME && isGoogleDriveVideoUrl(getCurrentBrowserUrl());
+    browserPane?.classList.toggle("is-drive-video-page", isDriveVideoPage);
+}
+
+async function getDriveBrowserMediaUrl() {
+    if (activeBrowserHome !== DRIVE_HOME || !isGoogleDriveVideoUrl(getCurrentBrowserUrl())) return "";
+
+    if (capturedDriveMediaUrl && Date.now() - capturedDriveMediaAt < 10 * 60 * 1000) {
+        return capturedDriveMediaUrl;
+    }
+
+    try {
+        const latest = await window.watchParty?.getDriveMediaUrl?.();
+        if (latest?.url && isGoogleDriveDirectMediaUrl(latest.url)) {
+            capturedDriveMediaUrl = latest.url;
+            capturedDriveMediaAt = Date.now();
+            return latest.url;
+        }
+    } catch {}
+
+    try {
+        const mediaUrl = await browserWebview.executeJavaScript(`
+            (async () => {
+                if (window.__watchPartyBrowserNoPlayback?.originalPlay) {
+                    HTMLMediaElement.prototype.play = window.__watchPartyBrowserNoPlayback.originalPlay;
+                    window.__watchPartyBrowserNoPlayback = null;
+                }
+
+                document.getElementById("watch-party-browser-clean")?.remove();
+                window.__watchPartyMediaBlocker?.disconnect?.();
+
+                const isUsefulMediaUrl = value => {
+                    try {
+                        const url = new URL(value, location.href);
+                        const host = url.hostname.toLowerCase();
+                        const path = url.pathname.toLowerCase();
+                        return (
+                            value &&
+                            !value.startsWith("blob:") &&
+                            (
+                                host.includes("googleusercontent.com") ||
+                                host.includes("googlevideo.com") ||
+                                host.includes("usercontent.google.com") ||
+                                path.includes("videoplayback") ||
+                                path.includes("/download")
+                            )
+                        );
+                    } catch {
+                        return false;
+                    }
+                };
+
+                const findUrl = () => {
+                    const video = document.querySelector("video");
+                    const videoUrl =
+                        video?.currentSrc ||
+                        video?.src ||
+                        document.querySelector("video source[src]")?.src ||
+                        "";
+
+                    if (isUsefulMediaUrl(videoUrl)) return videoUrl;
+
+                    const resources = performance.getEntriesByType("resource")
+                        .map(entry => entry.name)
+                        .filter(isUsefulMediaUrl);
+
+                    return resources.find(url => /videoplayback|googlevideo|googleusercontent|usercontent\\.google/i.test(url)) ||
+                        resources[0] ||
+                        "";
+                };
+
+                let found = findUrl();
+
+                if (found) return found;
+
+                const video = document.querySelector("video");
+                if (video) {
+                    video.muted = true;
+                    await video.play().catch(() => {});
+                    await new Promise(resolve => setTimeout(resolve, 450));
+                    video.pause?.();
+                }
+
+                return findUrl();
+            })()
+        `);
+
+        if (typeof mediaUrl === "string" && mediaUrl) {
+            capturedDriveMediaUrl = mediaUrl;
+            capturedDriveMediaAt = Date.now();
+            return mediaUrl;
+        }
+
+        return "";
+    } catch {
+        return "";
+    }
+}
+
+function getCurrentBrowserVideoUrl() {
+    const candidates = [
+        getCurrentBrowserUrl(),
+        driveLinkInput?.value.trim() || "",
+        mediaUrlInput.value.trim()
+    ];
+
+    for (const rawUrl of candidates) {
+        if (!rawUrl) continue;
+
+        const normalizedUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+
+        try {
+            const parsedUrl = new URL(normalizedUrl);
+            const url = parsedUrl.toString();
+
+            if (isSupportedVideoUrl(url)) return url;
+        } catch {}
+    }
+
+    return "";
 }
 
 async function addQueueFromUrl(url, titleHint = "") {
@@ -2268,8 +2921,14 @@ function askQueueConfirmation() {
 async function handleBrowserVideoSelection(url, titleHint = "") {
     if (!isSupportedVideoUrl(url)) return false;
 
+    let playerUrl = url;
+
+    if (activeBrowserHome === DRIVE_HOME && isGoogleDriveVideoUrl(url)) {
+        setMediaStatus("Using Drive browser", "");
+    }
+
     const now = Date.now();
-    const identity = normalizedVideoIdentity(url);
+    const identity = normalizedVideoIdentity(playerUrl);
 
     if (!identity) return false;
 
@@ -2292,13 +2951,15 @@ async function handleBrowserVideoSelection(url, titleHint = "") {
                 return true;
             }
 
-            selectedVideoUrl = url;
-            mediaUrlInput.value = url;
+            selectedVideoUrl = playerUrl;
+            mediaUrlInput.value = playerUrl;
+            loadPlayerWebviewUrl(playerUrl);
+            setMediaStatus("Loading", "");
 
             socket.emit("loadMedia", {
                 room: roomCode,
                 username,
-                url,
+                url: playerUrl,
                 title: titleHint || titleFromUrl(url)
             });
 
@@ -2315,7 +2976,7 @@ async function handleBrowserVideoSelection(url, titleHint = "") {
         const shouldQueue = await askQueueConfirmation();
 
         if (shouldQueue) {
-            await addQueueFromUrl(url, titleHint);
+            await addQueueFromUrl(playerUrl, titleHint);
         } else {
             setMediaStatus("Not queued", "");
         }
@@ -2377,6 +3038,11 @@ async function keepLinksInside(webview, targetMode = "self") {
                             host.endsWith(".facebook.com") ||
                             host === "fb.watch" ||
                             host.endsWith(".fb.watch");
+                        const isDrive =
+                            host === "drive.google.com" ||
+                            host.endsWith(".drive.google.com") ||
+                            host === "docs.google.com" ||
+                            host.endsWith(".docs.google.com");
                         return (
                             (isBilibili && (
                                 path.includes("/video/") ||
@@ -2405,6 +3071,10 @@ async function keepLinksInside(webview, targetMode = "self") {
                                 path.includes("/videos/") ||
                                 path.includes("/share/v/") ||
                                 host === "fb.watch"
+                            )) ||
+                            (isDrive && (
+                                parsed.searchParams.has("id") ||
+                                path.startsWith("/file/d/")
                             ))
                         );
                     } catch {
@@ -2700,7 +3370,113 @@ async function keepLinksInside(webview, targetMode = "self") {
     } catch {}
 }
 
+async function installDriveBrowserActions() {
+    if (!isGoogleDriveVideoUrl(getCurrentBrowserUrl())) return;
+
+    try {
+        await browserWebview.executeJavaScript(`
+            (() => {
+                const currentUrl = location.href;
+                const title = document.title || "Google Drive video";
+                const emit = action => {
+                    const payload = JSON.stringify({
+                        url: currentUrl,
+                        title,
+                        action
+                    });
+                    console.log("__WATCH_PARTY_VIDEO_SELECTED__" + payload);
+                };
+
+                const interceptDriveVideoClick = event => {
+                    if (event.target.closest?.("#watch-party-drive-actions, input, textarea, button, select, a[href], [role='button'][aria-label*='Share']")) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                    emit("play");
+                };
+
+                let dock = document.getElementById("watch-party-drive-actions");
+
+                if (!dock) {
+                    dock = document.createElement("div");
+                    dock.id = "watch-party-drive-actions";
+                    dock.innerHTML = \`
+                        <button type="button" data-action="play">Play in player</button>
+                        <button type="button" data-action="queue">Queue</button>
+                    \`;
+
+                    const style = document.createElement("style");
+                    style.id = "watch-party-drive-actions-style";
+                    style.textContent = \`
+                        #watch-party-drive-actions {
+                            position: fixed;
+                            right: 18px;
+                            bottom: 18px;
+                            z-index: 2147483647;
+                            display: inline-flex;
+                            gap: 8px;
+                            padding: 8px;
+                            border: 1px solid rgba(255,255,255,.18);
+                            border-radius: 999px;
+                            background: rgba(8,12,18,.78);
+                            box-shadow: 0 14px 34px rgba(0,0,0,.32);
+                            font-family: Inter, Arial, sans-serif;
+                        }
+
+                        #watch-party-drive-actions button {
+                            min-height: 38px;
+                            padding: 0 14px;
+                            border: 0;
+                            border-radius: 999px;
+                            color: #07110f;
+                            background: linear-gradient(135deg, #43c6ac, #f4b942);
+                            font-weight: 900;
+                            cursor: pointer;
+                        }
+
+                        #watch-party-drive-actions button[data-action="queue"] {
+                            color: #fff;
+                            border: 1px solid rgba(255,255,255,.14);
+                            background: rgba(17,23,34,.92);
+                        }
+                    \`;
+
+                    document.documentElement.appendChild(style);
+                    document.documentElement.appendChild(dock);
+                    dock.addEventListener("click", event => {
+                        const button = event.target.closest("button[data-action]");
+                        if (!button) return;
+
+                        event.preventDefault();
+                        event.stopPropagation();
+                        emit(button.dataset.action || "play");
+                    });
+                }
+
+                if (!window.__watchPartyDriveClickInterceptor) {
+                    window.__watchPartyDriveClickInterceptor = true;
+                    document.addEventListener("pointerdown", interceptDriveVideoClick, true);
+                    document.addEventListener("mousedown", interceptDriveVideoClick, true);
+                    document.addEventListener("touchstart", interceptDriveVideoClick, true);
+                    document.addEventListener("click", interceptDriveVideoClick, true);
+                }
+
+                return true;
+            })()
+        `);
+    } catch {}
+}
+
 function getQueueUrl() {
+    const browserUrl = getCurrentBrowserVideoUrl();
+
+    if (browserUrl && browserUrl !== activeBrowserHome) {
+        return browserUrl;
+    }
+
     const fieldUrl = getSupportedMediaUrl();
 
     if (fieldUrl && fieldUrl !== activeBrowserHome && isSupportedVideoUrl(fieldUrl)) {
@@ -2813,6 +3589,11 @@ async function cleanPlayerView() {
     if (playerWebview.src === "about:blank") {
         setMediaStatus("Load player first", "is-offline");
         return false;
+    }
+
+    if (isDrivePlayerMode()) {
+        setMediaStatus("Ready", "is-online");
+        return true;
     }
 
     try {
@@ -3267,9 +4048,13 @@ async function cleanPlayerView() {
 }
 
 function scheduleCleanPlayerView() {
+    if (isDrivePlayerMode()) return;
+
     [80, 250, 600, 1200, 2400].forEach(delay => {
         setTimeout(() => {
-            cleanPlayerView();
+            if (!isDrivePlayerMode()) {
+                cleanPlayerView();
+            }
         }, delay);
     });
 }
@@ -3278,6 +4063,10 @@ function titleFromUrl(url) {
     try {
         const parsedUrl = new URL(url);
         const host = parsedUrl.hostname.replace(/^www\./, "");
+        if (isGoogleDriveUrl(url)) {
+            return "Google Drive video";
+        }
+
         const path = decodeURIComponent(parsedUrl.pathname)
             .split("/")
             .pop()
@@ -3879,6 +4668,8 @@ function loadBilibili({ url, title, loadedBy, loadedAt }) {
     setPlayerEmptyState(false);
     syncPlayerWebviewSize();
     selectedVideoUrl = nextUrl;
+    driveFallbackAttemptedFor = "";
+    driveConfirmAttemptedFor = "";
     mediaUrlInput.value = nextUrl;
 
     if (!isDuplicateLoad) {
@@ -4194,8 +4985,11 @@ socket.on("mediaStopped", async data => {
         await document.exitFullscreen().catch(() => {});
     }
 
+    restoreDriveBrowserToBrowserPane();
     playerWebview.src = "about:blank";
+    playerPane.classList.remove("is-drive-player");
     selectedVideoUrl = "";
+    driveConfirmAttemptedFor = "";
     lastLoadedMediaToken = "";
     lastPlayerReadyUrl = "";
     lastPlaybackState = null;
@@ -4880,7 +5674,7 @@ window.addEventListener("beforeunload", () => {
 
 
 loadMediaButton.onclick = () => {
-    const url = getSupportedMediaUrl();
+    const url = getCurrentBrowserVideoUrl() || getSupportedMediaUrl();
 
     if (!url) return;
 
@@ -4908,6 +5702,63 @@ mediaUrlInput.addEventListener("keydown", event => {
     }
 });
 
+retryPlayerButton?.addEventListener("click", () => {
+    if (!selectedVideoUrl) return;
+
+    driveFallbackAttemptedFor = "";
+    loadPlayerWebviewUrl(selectedVideoUrl);
+    waitForPlayerReady();
+    setMediaStatus("Retrying", "");
+});
+
+openPlayerExternalButton?.addEventListener("click", async () => {
+    const url = selectedVideoUrl || playerWebview.src || "";
+    if (!url) return;
+
+    const result = await window.watchParty?.openExternal?.(url);
+    if (!result?.ok) {
+        setMediaStatus("Could not open link", "is-offline");
+    }
+});
+
+continueDrivePlayerButton?.addEventListener("click", async () => {
+    setDriveContinueVisible(false);
+    setPlayerLoading(true, "Continuing Drive download");
+
+    if (await continueDriveDownloadConfirmation()) {
+        return;
+    }
+
+    try {
+        const buttonRect = await playerWebview.executeJavaScript(`
+            (() => {
+                const candidates = Array.from(document.querySelectorAll("a, button, input[type='submit']"));
+                const target = candidates.find(element =>
+                    /download anyway/i.test(element.innerText || element.value || element.getAttribute("aria-label") || "")
+                );
+                if (!target) return null;
+
+                const rect = target.getBoundingClientRect();
+                return {
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2
+                };
+            })()
+        `);
+
+        if (buttonRect && Number.isFinite(buttonRect.x) && Number.isFinite(buttonRect.y)) {
+            playerWebview.sendInputEvent?.({ type: "mouseMove", x: Math.round(buttonRect.x), y: Math.round(buttonRect.y) });
+            playerWebview.sendInputEvent?.({ type: "mouseDown", x: Math.round(buttonRect.x), y: Math.round(buttonRect.y), button: "left", clickCount: 1 });
+            playerWebview.sendInputEvent?.({ type: "mouseUp", x: Math.round(buttonRect.x), y: Math.round(buttonRect.y), button: "left", clickCount: 1 });
+            driveConfirmAttemptedFor = selectedVideoUrl;
+            setMediaStatus("Continuing Drive download", "");
+            return;
+        }
+    } catch {}
+
+    setPlayerError("Could not continue the Google Drive confirmation. Open the link directly or use a smaller/public video file.");
+});
+
 playerWebview.addEventListener("did-start-loading", () => {
     setMediaStatus("Loading", "");
     if (playerWebview.src !== "about:blank") {
@@ -4917,6 +5768,17 @@ playerWebview.addEventListener("did-start-loading", () => {
 
 playerWebview.addEventListener("did-stop-loading", async () => {
     syncPlayerWebviewSize();
+
+    if (isDrivePlayerMode()) {
+        clearInterval(playerReadyCheckTimer);
+        playerReadyCheckTimer = null;
+        clearTimeout(playerLoadingReleaseTimer);
+        playerLoadingReleaseTimer = null;
+        setPlayerLoading(false);
+        setMediaStatus("Drive ready", "is-online");
+        keepLinksInside(playerWebview, "self");
+        return;
+    }
 
     if (isYoutubePlayerShellUrl(playerWebview.src)) {
         try {
@@ -4952,17 +5814,39 @@ playerWebview.addEventListener("did-stop-loading", async () => {
     }
 });
 
-playerWebview.addEventListener("did-fail-load", () => {
+playerWebview.addEventListener("did-fail-load", event => {
+    const failedUrl = event?.validatedURL || event?.url || playerWebview.src || selectedVideoUrl || "";
+    const isAbortedLoad = event?.errorCode === -3 || event?.errno === -3 || event?.code === "ERR_ABORTED";
+    const driveFailure = isGoogleDriveUrl(failedUrl) || isGoogleDriveUrl(playerWebview.src || "") || isGoogleDriveUrl(selectedVideoUrl || "");
+
+    if (isAbortedLoad && isIgnorableGoogleAssetUrl(failedUrl)) {
+        return;
+    }
+
+    if (isAbortedLoad) {
+        if (driveFailure) {
+            setPlayerLoading(false);
+            setMediaStatus("Drive preview", "is-online");
+        }
+        return;
+    }
+
+    if (driveFailure) {
+        if (isGoogleDrivePreviewUrl(failedUrl)) {
+            setPlayerLoading(false);
+            setMediaStatus("Drive preview", "is-online");
+            return;
+        }
+
+        setPlayerError(`Google Drive failed to load (${event?.errorDescription || event?.code || event?.errorCode || "unknown error"}).`);
+        return;
+    }
+
     if (isYoutubePlayerShellUrl(playerWebview.src) && loadYoutubeEmbedFallbackPlayer()) {
         return;
     }
 
-    clearInterval(playerReadyCheckTimer);
-    playerReadyCheckTimer = null;
-    clearTimeout(playerLoadingReleaseTimer);
-    playerLoadingReleaseTimer = null;
-    setPlayerLoading(false);
-    setMediaStatus("Load failed", "is-offline");
+    setPlayerError(event?.errorDescription || "The player could not load this video.");
 });
 
 playerWebview.addEventListener("will-navigate", event => {
@@ -5023,6 +5907,14 @@ browserWebview.addEventListener("console-message", event => {
         const payload = JSON.parse(rawPayload);
         selectedUrl = payload?.url || "";
         selectedTitle = payload?.title || "";
+        if (payload?.action === "queue" && isSupportedVideoUrl(selectedUrl)) {
+            addQueueFromUrl(selectedUrl, selectedTitle);
+            return;
+        }
+        if (payload?.action === "play") {
+            lastPromptVideoIdentity = "";
+            handlingBrowserVideoUrl = "";
+        }
     } catch {}
 
     if (isSupportedVideoUrl(selectedUrl)) {
@@ -5030,17 +5922,41 @@ browserWebview.addEventListener("console-message", event => {
     }
 });
 
+browserPane?.addEventListener("click", event => {
+    if (!browserPane.classList.contains("is-drive-video-page")) return;
+    if (event.target.closest?.(".drive-link-controls, .browser-loading-state")) return;
+
+    const url = getCurrentBrowserVideoUrl();
+    if (!url) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    lastPromptVideoIdentity = "";
+    handlingBrowserVideoUrl = "";
+    handleBrowserVideoSelection(url, "Google Drive video");
+});
+
 browserWebview.addEventListener("did-start-loading", () => {
-    setBrowserLoading(true, "Loading browser");
+    browserPane?.classList.remove("is-drive-video-page");
+    setBrowserLoading(true, activeBrowserHome === DRIVE_HOME ? "Loading Drive" : "Loading browser");
 
     if (playerWebview.src === "about:blank") {
         setMediaStatus("Browsing", "");
     }
 
-    disableBrowserPlayback();
+    if (activeBrowserHome !== DRIVE_HOME) {
+        disableBrowserPlayback();
+    }
 });
 
 browserWebview.addEventListener("did-stop-loading", () => {
+    if (activeBrowserHome === DRIVE_HOME) {
+        setBrowserLoading(false);
+        installDriveBrowserActions();
+        updateDriveBrowserCaptureState();
+        return;
+    }
+
     setBrowserLoading(false);
     requestAnimationFrame(syncBrowserWebviewSize);
     keepLinksInside(browserWebview, "blank");
@@ -5048,7 +5964,9 @@ browserWebview.addEventListener("did-stop-loading", () => {
 });
 
 browserWebview.addEventListener("did-fail-load", event => {
-    if (event?.errorCode === -3) return;
+    const failedUrl = event?.validatedURL || event?.url || browserWebview.src || "";
+    if (event?.errorCode === -3 || event?.errno === -3 || event?.code === "ERR_ABORTED") return;
+    if (isIgnorableGoogleAssetUrl(failedUrl)) return;
 
     setBrowserLoading(false);
     setMediaStatus("Browser load failed", "is-offline");
@@ -5057,6 +5975,12 @@ browserWebview.addEventListener("did-fail-load", event => {
 browserWebview.addEventListener("did-navigate", event => {
     const targetUrl = event.url || browserWebview.getURL?.() || browserWebview.src || "";
 
+    if (activeBrowserHome === DRIVE_HOME) {
+        installDriveBrowserActions();
+        updateDriveBrowserCaptureState();
+        return;
+    }
+
     if (isSupportedVideoUrl(targetUrl)) {
         handleBrowserVideoSelection(targetUrl);
     }
@@ -5064,6 +5988,12 @@ browserWebview.addEventListener("did-navigate", event => {
 
 browserWebview.addEventListener("did-navigate-in-page", event => {
     const targetUrl = event.url || browserWebview.getURL?.() || browserWebview.src || "";
+
+    if (activeBrowserHome === DRIVE_HOME) {
+        installDriveBrowserActions();
+        updateDriveBrowserCaptureState();
+        return;
+    }
 
     if (isSupportedVideoUrl(targetUrl)) {
         handleBrowserVideoSelection(targetUrl);
@@ -5082,6 +6012,10 @@ browserWebview.addEventListener("will-navigate", event => {
         return;
     }
 
+    if (activeBrowserHome === DRIVE_HOME) {
+        return;
+    }
+
     if (isSupportedVideoUrl(targetUrl)) {
         event.preventDefault();
         handleBrowserVideoSelection(targetUrl);
@@ -5095,6 +6029,11 @@ browserWebview.addEventListener("new-window", event => {
 
     if (!isAllowedBrowserUrl(event.url)) {
         setMediaStatus("Unsupported site", "is-offline");
+        return;
+    }
+
+    if (activeBrowserHome === DRIVE_HOME) {
+        browserWebview.src = event.url;
         return;
     }
 
@@ -5373,6 +6312,62 @@ browseDailymotionButton.onclick = () => {
 browseFacebookButton.onclick = () => {
     setBrowserSite("facebook");
 };
+
+browseDriveButton.onclick = () => {
+    setBrowserSite("drive");
+};
+
+openDriveLinkButton?.addEventListener("click", () => {
+    const url = getDriveLinkFromInput();
+    if (!url) return;
+
+    mediaUrlInput.value = url;
+    setBrowserSite("drive", { load: false });
+    if (typeof browserWebview.loadURL === "function") {
+        browserWebview.loadURL(url);
+    } else {
+        browserWebview.src = url;
+    }
+    setBrowserLoading(true, "Loading Drive video");
+    setMediaStatus("Open the Drive video", "");
+});
+
+playDriveLinkButton?.addEventListener("click", () => {
+    const url = getDriveLinkFromInput();
+    if (!url) return;
+
+    lastPromptVideoIdentity = "";
+    handlingBrowserVideoUrl = "";
+    browserVideoPromptOpen = false;
+    openPlayerFromUrl(url);
+});
+
+queueDriveLinkButton?.addEventListener("click", () => {
+    const url = getDriveLinkFromInput();
+    if (!url) return;
+
+    mediaUrlInput.value = url;
+    addQueueFromUrl(url);
+});
+
+openDriveLoginButton?.addEventListener("click", () => {
+    setBrowserSite("drive", { load: false });
+    const authUrl = `${APP_SERVER_ORIGIN}/api/drive/auth/start`;
+    if (typeof browserWebview.loadURL === "function") {
+        browserWebview.loadURL(authUrl);
+    } else {
+        browserWebview.src = authUrl;
+    }
+    setBrowserLoading(true, "Connecting Drive");
+    setMediaStatus("Sign in to Drive API", "");
+});
+
+driveLinkInput?.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+    openDriveLinkButton?.click();
+});
 
 playerFullscreenButton.onclick = async () => {
     try {
