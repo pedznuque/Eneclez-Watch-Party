@@ -606,71 +606,6 @@ h2 {
     -webkit-appearance: none;
 }
 
-.caption-toggle {
-    min-height: 38px;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 0 12px;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    color: var(--muted);
-    background: var(--surface-strong);
-    font-size: 12px;
-    font-weight: 900;
-}
-
-.caption-toggle:hover:not(:disabled),
-.caption-toggle.is-active {
-    color: var(--primary);
-    border-color: rgba(67, 198, 172, .44);
-    background: rgba(67, 198, 172, .1);
-}
-
-.caption-toggle.is-loading {
-    color: var(--accent);
-}
-
-.caption-icon {
-    width: 20px;
-    height: 20px;
-    display: block;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
-.auto-caption-overlay {
-    position: absolute;
-    left: 50%;
-    bottom: 22px;
-    z-index: 22;
-    width: min(780px, calc(100% - 96px));
-    padding: 10px 16px;
-    border-radius: 14px;
-    color: #fff;
-    background: rgba(0, 0, 0, .62);
-    box-shadow: 0 14px 40px rgba(0, 0, 0, .32);
-    font-size: clamp(16px, 2vw, 24px);
-    font-weight: 850;
-    line-height: 1.35;
-    text-align: center;
-    text-shadow:
-        0 2px 4px rgba(0, 0, 0, .9),
-        0 0 12px rgba(0, 0, 0, .8);
-    transform: translateX(-50%);
-    pointer-events: none;
-}
-
-.auto-caption-overlay.is-note {
-    width: min(520px, calc(100% - 60px));
-    color: rgba(255, 255, 255, .88);
-    font-size: 13px;
-    font-weight: 800;
-}
-
 .quality-control select {
     min-height: 28px;
     padding: 0 26px 0 10px;
@@ -1669,8 +1604,8 @@ button:disabled {
     bottom: 0;
     z-index: 20;
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
-    grid-template-areas: "play time progress volume captions";
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "play time progress volume";
     align-items: center;
     gap: 14px;
     padding: 48px 24px 18px;
@@ -1733,28 +1668,6 @@ button:disabled {
 
 .player-stage:fullscreen .volume-slider {
     width: 78px;
-}
-
-.player-stage:fullscreen .caption-toggle {
-    grid-area: captions;
-    min-height: 36px;
-    padding: 0 11px;
-    border-color: rgba(255, 255, 255, .14);
-    color: rgba(255, 255, 255, .86);
-    background: rgba(8, 12, 18, .36);
-    pointer-events: auto;
-}
-
-.player-stage:fullscreen .auto-caption-overlay {
-    bottom: 96px;
-    z-index: 23;
-    width: min(900px, calc(100vw - 120px));
-    font-size: clamp(20px, 2.8vw, 34px);
-    background: rgba(0, 0, 0, .58);
-}
-
-.player-stage:fullscreen.is-fullscreen-controls-idle .auto-caption-overlay {
-    bottom: 42px;
 }
 
 /* Keep fullscreen controls focused: play/pause, progress, and volume. */

@@ -34,8 +34,6 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const GOOGLE_DRIVE_REFRESH_TOKEN = process.env.GOOGLE_DRIVE_REFRESH_TOKEN || "";
 const GOOGLE_DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"];
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const GROQ_TRANSCRIPTION_MODEL = process.env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo";
 
 const io = new Server(server, {
     cors: {
@@ -44,7 +42,6 @@ const io = new Server(server, {
 });
 
 const rooms = {};
-const captionCache = new Map();
 let driveTokens = GOOGLE_DRIVE_REFRESH_TOKEN
     ? {
         refresh_token: GOOGLE_DRIVE_REFRESH_TOKEN,
@@ -52,8 +49,6 @@ let driveTokens = GOOGLE_DRIVE_REFRESH_TOKEN
         expires_at: 0
     }
     : null;
-
-app.use(express.json({ limit: "8mb" }));
 
 app.get("/", (req, res) => {
     res.json({
@@ -185,13 +180,6 @@ app.get("/api/drive/status", (_req, res) => {
     });
 });
 
-app.get("/api/captions/status", (_req, res) => {
-    res.json({
-        configured: Boolean(GROQ_API_KEY),
-        model: GROQ_TRANSCRIPTION_MODEL
-    });
-});
-
 app.get("/api/drive/auth/start", (req, res) => {
     if (!isDriveOAuthConfigured()) {
         res.status(500).send("Google Drive OAuth is not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
@@ -319,182 +307,6 @@ app.get("/api/drive/stream/:fileId", async (req, res) => {
         res.status(error.status || 500).send(error.message || "Google Drive stream failed.");
     }
 });
-
-app.post("/api/captions/transcribe", async (req, res) => {
-    const mediaUrl = cleanUrl(req.body?.url);
-
-    if (!GROQ_API_KEY) {
-        res.status(500).json({
-            error: "Auto captions need GROQ_API_KEY on the server."
-        });
-        return;
-    }
-
-    if (!isCaptionMediaUrlAllowed(mediaUrl, req)) {
-        res.status(400).json({
-            error: "Auto captions need a direct video or Drive stream URL."
-        });
-        return;
-    }
-
-    const cached = captionCache.get(mediaUrl);
-    if (cached) {
-        res.json(cached);
-        return;
-    }
-
-    try {
-        const form = new FormData();
-        form.append("model", GROQ_TRANSCRIPTION_MODEL);
-        form.append("url", mediaUrl);
-        form.append("response_format", "verbose_json");
-        form.append("temperature", "0");
-        form.append("prompt", "Transcribe naturally. Keep Tagalog, English, and Taglish in the spoken language.");
-
-        const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-            method: "POST",
-            headers: {
-                authorization: `Bearer ${GROQ_API_KEY}`
-            },
-            body: form
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            const detail = normalizeApiError(payload, "Caption transcription failed.");
-            console.warn("Groq caption chunk failed:", response.status, detail);
-            res.status(response.status).json({
-                error: detail,
-                status: response.status
-            });
-            return;
-        }
-
-        const segments = Array.isArray(payload.segments)
-            ? payload.segments.map(segment => ({
-                start: clampNumber(segment.start, 0, 24 * 60 * 60, 0),
-                end: clampNumber(segment.end, 0, 24 * 60 * 60, 0),
-                text: cleanText(segment.text, "", 500)
-            })).filter(segment => segment.text && segment.end >= segment.start)
-            : [];
-
-        const result = {
-            text: cleanText(payload.text, "", 20000),
-            segments,
-            model: GROQ_TRANSCRIPTION_MODEL
-        };
-
-        captionCache.set(mediaUrl, result);
-        if (captionCache.size > 20) {
-            captionCache.delete(captionCache.keys().next().value);
-        }
-
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({
-            error: error.message || "Caption transcription failed."
-        });
-    }
-});
-
-app.post("/api/captions/transcribe-chunk", async (req, res) => {
-    const audioBase64 = String(req.body?.audioBase64 || "");
-    const mimeType = cleanText(req.body?.mimeType, "audio/webm", 80) || "audio/webm";
-
-    if (!GROQ_API_KEY) {
-        res.status(500).json({
-            error: "Auto captions need GROQ_API_KEY on the server."
-        });
-        return;
-    }
-
-    if (!audioBase64 || audioBase64.length < 200) {
-        res.status(400).json({
-            error: "No audio was captured yet."
-        });
-        return;
-    }
-
-    try {
-        const audioBuffer = Buffer.from(audioBase64, "base64");
-        if (!audioBuffer.length) {
-            res.status(400).json({
-                error: "Captured audio was empty."
-            });
-            return;
-        }
-
-        const extension = mimeType.includes("mp4")
-            ? "m4a"
-            : mimeType.includes("ogg")
-                ? "ogg"
-                : "webm";
-        const form = new FormData();
-        form.append("model", GROQ_TRANSCRIPTION_MODEL);
-        form.append("file", new Blob([audioBuffer], { type: mimeType }), `caption-chunk.${extension}`);
-        form.append("response_format", "json");
-        form.append("temperature", "0");
-        form.append("prompt", "Transcribe naturally. Keep Tagalog, English, and Taglish in the spoken language.");
-
-        const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-            method: "POST",
-            headers: {
-                authorization: `Bearer ${GROQ_API_KEY}`
-            },
-            body: form
-        });
-
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) {
-            res.status(response.status).json({
-                error: payload.error?.message || payload.error || "Caption transcription failed."
-            });
-            return;
-        }
-
-        res.json({
-            text: cleanText(payload.text, "", 1200),
-            model: GROQ_TRANSCRIPTION_MODEL
-        });
-    } catch (error) {
-        console.warn("Caption chunk failed:", error?.message || error);
-        res.status(500).json({
-            error: error.message || "Caption transcription failed."
-        });
-    }
-});
-
-function normalizeApiError(payload, fallback) {
-    const error = payload?.error;
-
-    if (!error) return fallback;
-    if (typeof error === "string") return error;
-    if (typeof error.message === "string") return error.message;
-    try {
-        return JSON.stringify(error);
-    } catch {
-        return fallback;
-    }
-}
-
-function isCaptionMediaUrlAllowed(value, req) {
-    try {
-        const url = new URL(value);
-        const publicOrigin = new URL(getPublicOrigin(req));
-        const requestHost = req.headers.host || "";
-        const isOwnHost =
-            url.host === publicOrigin.host ||
-            url.host === requestHost ||
-            ["localhost:3000", "127.0.0.1:3000"].includes(url.host);
-        const isOwnDriveStream =
-            isOwnHost &&
-            url.pathname.toLowerCase().startsWith("/api/drive/stream/");
-
-        return (url.protocol === "https:" || url.protocol === "http:") && isOwnDriveStream;
-    } catch {
-        return false;
-    }
-}
 
 function cleanText(value, fallback = "", limit = 80) {
     return String(value || fallback).trim().slice(0, limit);
