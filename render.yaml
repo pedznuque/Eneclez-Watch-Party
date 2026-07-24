@@ -7,3 +7,14 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
+    envVars:
+      - key: APP_PUBLIC_URL
+        value: https://eneclez-watch-party.onrender.com
+      - key: GOOGLE_REDIRECT_URI
+        value: https://eneclez-watch-party.onrender.com/api/drive/oauth/callback
+      - key: GOOGLE_CLIENT_ID
+        value: 274218726076-993n8nenjk0loinavcrgqdp6gpntgo7i.apps.googleusercontent.com
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
