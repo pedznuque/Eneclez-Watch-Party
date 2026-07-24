@@ -85,6 +85,8 @@
                             <button id="continueDrivePlayer" class="primary-button" type="button">Download anyway</button>
                         </div>
 
+                        <div id="autoCaptionOverlay" class="auto-caption-overlay" hidden aria-live="polite"></div>
+
                         <button id="playerFullscreen" class="player-fullscreen-button" title="Enter fullscreen" aria-label="Enter fullscreen">
                             <svg class="fullscreen-icon" viewBox="0 0 24 24" aria-hidden="true">
                                 <path class="fullscreen-expand" d="M8 3H4a1 1 0 0 0-1 1v4M16 3h4a1 1 0 0 1 1 1v4M8 21H4a1 1 0 0 1-1-1v-4M16 21h4a1 1 0 0 0 1-1v-4" />
@@ -125,6 +127,16 @@
                                 </svg>
                                 <input id="volumeControl" class="volume-slider" type="range" min="0" max="100" value="100" step="1" aria-label="Volume">
                             </label>
+                            <button id="autoCaptions" class="caption-toggle" type="button" aria-pressed="false" title="Auto captions" aria-label="Auto captions">
+                                <svg class="caption-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="3.5" y="5.5" width="17" height="13" rx="3" />
+                                    <path d="M8 11h3" />
+                                    <path d="M13.5 11H16" />
+                                    <path d="M8 14h2.5" />
+                                    <path d="M13 14h3" />
+                                </svg>
+                                <span>CC</span>
+                            </button>
                             <span id="hostBadge" class="host-badge">Waiting for host</span>
                             <button id="cleanPlayer" class="ghost-button is-hidden-control">Clean Player</button>
                         </div>

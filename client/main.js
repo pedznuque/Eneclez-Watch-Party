@@ -1,11 +1,17 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, webContents } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, webContents, shell, desktopCapturer, session } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const events = require("events");
 const path = require("path");
+
+const WEB_CONTENTS_MAX_LISTENERS = 100;
+
+events.defaultMaxListeners = Math.max(events.defaultMaxListeners, WEB_CONTENTS_MAX_LISTENERS);
 
 let activeChatWebContentsId = null;
 let mainWindow = null;
 let updatePromptOpen = false;
 let isCheckingForUpdates = false;
+let latestDriveMediaUrl = "";
 const protectedSessions = new Set();
 
 const BLOCKED_REQUEST_HOSTS = [
@@ -66,12 +72,64 @@ function shouldBlockRequest(url) {
  }
 }
 
+function isLikelyDriveMediaUrl(url) {
+ try {
+  const parsedUrl = new URL(url);
+  const host = parsedUrl.hostname.toLowerCase();
+  const pathAndQuery = `${parsedUrl.pathname}${parsedUrl.search}`.toLowerCase();
+
+  if (
+   host.includes("googlevideo.com") ||
+   pathAndQuery.includes("videoplayback")
+  ) {
+   return true;
+  }
+
+  return (
+   (
+    host.includes("googleusercontent.com") ||
+    host.includes("usercontent.google.com")
+   ) &&
+   !host.startsWith("lh") &&
+   !pathAndQuery.includes("/ogw/") &&
+   !pathAndQuery.match(/\.(png|jpe?g|gif|webp|svg|ico)(\?|$)/i)
+  );
+ } catch {
+  return false;
+ }
+}
+
+function rememberDriveMediaUrl(url) {
+ if (!url || !isLikelyDriveMediaUrl(url)) return;
+
+ latestDriveMediaUrl = url;
+ if (mainWindow && !mainWindow.isDestroyed()) {
+  mainWindow.webContents.send("watch-party-drive-media-url", {
+   url,
+   capturedAt: Date.now()
+  });
+ }
+}
+
+function hasVideoContentType(headers = {}) {
+ const contentTypeHeader = Object.entries(headers).find(([key]) => key.toLowerCase() === "content-type")?.[1];
+ const values = Array.isArray(contentTypeHeader) ? contentTypeHeader : [contentTypeHeader];
+ return values.some(value => String(value || "").toLowerCase().startsWith("video/"));
+}
+
 function protectSession(session) {
  if (!session || protectedSessions.has(session)) return;
 
  protectedSessions.add(session);
  session.webRequest.onBeforeRequest((details, callback) => {
+  rememberDriveMediaUrl(details.url);
   callback({ cancel: shouldBlockRequest(details.url) });
+ });
+ session.webRequest.onHeadersReceived((details, callback) => {
+  if (hasVideoContentType(details.responseHeaders)) {
+   rememberDriveMediaUrl(details.url);
+  }
+  callback({});
  });
 }
 
@@ -101,6 +159,8 @@ function isAllowedPopup(url) {
   const host = parsedUrl.hostname.replace(/^www\./, "").toLowerCase();
   const allowedHosts = [
    "accounts.google.com",
+   "drive.google.com",
+   "docs.google.com",
    "facebook.com",
    "google.com",
    "passport.bilibili.com",
@@ -205,6 +265,32 @@ function checkForUpdatesSoon() {
  }, 4000);
 }
 
+function setupCaptionDisplayCapture() {
+ const targetSession = session.defaultSession;
+ if (!targetSession?.setDisplayMediaRequestHandler) return;
+
+ targetSession.setDisplayMediaRequestHandler((_request, callback) => {
+  desktopCapturer.getSources({
+   types: ["screen", "window"],
+   thumbnailSize: { width: 1, height: 1 }
+  }).then(sources => {
+   const screenSource = sources.find(source => source.id.startsWith("screen:")) || sources[0];
+
+   if (!screenSource) {
+    callback({});
+    return;
+   }
+
+   callback({
+    video: screenSource,
+    audio: "loopback"
+   });
+  }).catch(() => {
+   callback({});
+  });
+ });
+}
+
 ipcMain.handle("watch-party-get-app-info", () => ({
  version: app.getVersion(),
  isPackaged: app.isPackaged
@@ -244,7 +330,27 @@ ipcMain.handle("watch-party-check-for-updates", async () => {
  }
 });
 
+ipcMain.handle("watch-party-open-external", async (_event, url) => {
+ try {
+  const parsedUrl = new URL(String(url || ""));
+  if (!["https:", "http:"].includes(parsedUrl.protocol)) {
+   return { ok: false };
+  }
+
+  await shell.openExternal(parsedUrl.toString());
+  return { ok: true };
+ } catch {
+  return { ok: false };
+ }
+});
+
+ipcMain.handle("watch-party-get-drive-media-url", async () => ({
+ ok: Boolean(latestDriveMediaUrl),
+ url: latestDriveMediaUrl
+}));
+
 app.on("web-contents-created", (_event, contents) => {
+ contents.setMaxListeners(Math.max(contents.getMaxListeners(), WEB_CONTENTS_MAX_LISTENERS));
  protectSession(contents.session);
  contents.setWindowOpenHandler(({ url }) => ({
   action: contents.getType() === "webview" && isAllowedPopup(url) ? "allow" : "deny"
@@ -294,6 +400,7 @@ app.on("web-contents-created", (_event, contents) => {
 
 app.whenReady().then(() => {
  Menu.setApplicationMenu(null);
+ setupCaptionDisplayCapture();
  setupAutoUpdates();
 
  mainWindow = new BrowserWindow({

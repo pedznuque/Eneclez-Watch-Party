@@ -1,6 +1,13 @@
-const {app, BrowserWindow, Menu} = require("electron");
+const {app, BrowserWindow, Menu, ipcMain, desktopCapturer, session} = require("electron");
+const events = require("events");
 const path=require("path");
 
+const WEB_CONTENTS_MAX_LISTENERS = 100;
+
+events.defaultMaxListeners = Math.max(events.defaultMaxListeners, WEB_CONTENTS_MAX_LISTENERS);
+
+let mainWindow = null;
+let latestDriveMediaUrl = "";
 const protectedSessions = new Set();
 const BLOCKED_REQUEST_HOSTS = [
  "doubleclick.net",
@@ -60,23 +67,107 @@ function shouldBlockRequest(url) {
  }
 }
 
+function isLikelyDriveMediaUrl(url) {
+ try {
+  const parsedUrl = new URL(url);
+  const host = parsedUrl.hostname.toLowerCase();
+  const pathAndQuery = `${parsedUrl.pathname}${parsedUrl.search}`.toLowerCase();
+
+  if (
+   host.includes("googlevideo.com") ||
+   pathAndQuery.includes("videoplayback")
+  ) {
+   return true;
+  }
+
+  return (
+   (
+    host.includes("googleusercontent.com") ||
+    host.includes("usercontent.google.com")
+   ) &&
+   !host.startsWith("lh") &&
+   !pathAndQuery.includes("/ogw/") &&
+   !pathAndQuery.match(/\.(png|jpe?g|gif|webp|svg|ico)(\?|$)/i)
+  );
+ } catch {
+  return false;
+ }
+}
+
+function rememberDriveMediaUrl(url) {
+ if (!url || !isLikelyDriveMediaUrl(url)) return;
+
+ latestDriveMediaUrl = url;
+ if (mainWindow && !mainWindow.isDestroyed()) {
+  mainWindow.webContents.send("watch-party-drive-media-url", {
+   url,
+   capturedAt: Date.now()
+  });
+ }
+}
+
+function hasVideoContentType(headers = {}) {
+ const contentTypeHeader = Object.entries(headers).find(([key]) => key.toLowerCase() === "content-type")?.[1];
+ const values = Array.isArray(contentTypeHeader) ? contentTypeHeader : [contentTypeHeader];
+ return values.some(value => String(value || "").toLowerCase().startsWith("video/"));
+}
+
 function protectSession(session) {
  if (!session || protectedSessions.has(session)) return;
 
  protectedSessions.add(session);
  session.webRequest.onBeforeRequest((details, callback) => {
+  rememberDriveMediaUrl(details.url);
   callback({ cancel: shouldBlockRequest(details.url) });
+ });
+ session.webRequest.onHeadersReceived((details, callback) => {
+  if (hasVideoContentType(details.responseHeaders)) {
+   rememberDriveMediaUrl(details.url);
+  }
+  callback({});
  });
 }
 
 app.on("web-contents-created", (_event, contents) => {
+ contents.setMaxListeners(Math.max(contents.getMaxListeners(), WEB_CONTENTS_MAX_LISTENERS));
  protectSession(contents.session);
 });
+
+ipcMain.handle("watch-party-get-drive-media-url", async () => ({
+ ok: Boolean(latestDriveMediaUrl),
+ url: latestDriveMediaUrl
+}));
+
+function setupCaptionDisplayCapture() {
+ const targetSession = session.defaultSession;
+ if (!targetSession?.setDisplayMediaRequestHandler) return;
+
+ targetSession.setDisplayMediaRequestHandler((_request, callback) => {
+  desktopCapturer.getSources({
+   types: ["screen", "window"],
+   thumbnailSize: { width: 1, height: 1 }
+  }).then(sources => {
+   const screenSource = sources.find(source => source.id.startsWith("screen:")) || sources[0];
+
+   if (!screenSource) {
+    callback({});
+    return;
+   }
+
+   callback({
+    video: screenSource,
+    audio: "loopback"
+   });
+  }).catch(() => {
+   callback({});
+  });
+ });
+}
 
 function createWindow(){
  Menu.setApplicationMenu(null);
 
- const win=new BrowserWindow({
+ mainWindow=new BrowserWindow({
   width:1200,
   height:750,
   autoHideMenuBar:true,
@@ -84,8 +175,11 @@ function createWindow(){
    preload:path.join(__dirname,"preload.js")
   }
  });
- win.setMenu(null);
- win.loadFile("src/index.html");
+ mainWindow.setMenu(null);
+ mainWindow.loadFile("src/index.html");
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+ setupCaptionDisplayCapture();
+ createWindow();
+});
