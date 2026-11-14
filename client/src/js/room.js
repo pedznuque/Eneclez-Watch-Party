@@ -97,6 +97,7 @@ let applyingRemotePlayback = false;
 let selectedVideoUrl = "";
 let driveFallbackAttemptedFor = "";
 let driveConfirmAttemptedFor = "";
+let facebookFallbackAttemptedFor = "";
 let capturedDriveMediaUrl = "";
 let capturedDriveMediaAt = 0;
 let driveBrowserPromotedToPlayer = false;
@@ -659,6 +660,8 @@ function normalizedVideoIdentity(url) {
         const parsed = new URL(url);
         const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
         const path = parsed.pathname.replace(/\/$/, "");
+        const facebookId = getFacebookVideoId(url);
+        if (facebookId) return `facebook:${facebookId}`;
 
         if (isYoutubeUrl(url)) {
             const videoId = getYoutubeVideoId(url);
@@ -1229,6 +1232,43 @@ async function isFacebookLoginWall() {
     }
 }
 
+function loadFacebookPageFallback() {
+    if (!isFacebookEmbedUrl(playerWebview.src) || !isFacebookVideoUrl(selectedVideoUrl)) return false;
+    const identity = normalizedVideoIdentity(selectedVideoUrl);
+    if (facebookFallbackAttemptedFor === identity) return false;
+    facebookFallbackAttemptedFor = identity;
+    clearInterval(playerReadyCheckTimer);
+    playerReadyCheckTimer = null;
+    clearTimeout(playerLoadingReleaseTimer);
+    playerLoadingReleaseTimer = null;
+    playerWebview.src = selectedVideoUrl;
+    setMediaStatus("Opening Facebook video page", "");
+    return true;
+}
+
+async function checkFacebookPlayerFailure() {
+    if (!isFacebookUrl(playerWebview.src)) return false;
+    const checkedUrl = playerWebview.src;
+    let unavailable = false;
+    try {
+        unavailable = await playerWebview.executeJavaScript(`
+            (() => {
+                const video = document.querySelector("video");
+                if (video && (video.readyState >= 2 || video.videoWidth > 0)) return false;
+                const text = (document.body?.innerText || "").toLowerCase().replace(/[’]/g, "'");
+                return /video (?:is |isn't |is not )?available|video unavailable|content (?:isn't|is not) available|this video cannot be embedded/.test(text) &&
+                    /unavailable|isn't available|is not available|cannot be embedded/.test(text);
+            })()
+        `);
+    } catch {}
+    if (!unavailable || playerWebview.src !== checkedUrl) return false;
+    if (loadFacebookPageFallback()) return true;
+    clearInterval(playerReadyCheckTimer);
+    playerReadyCheckTimer = null;
+    setPlayerError("Facebook says this video is unavailable. Sign in through the Facebook tab and check that you can watch the original reel. Private, removed, or region-restricted videos may not play.");
+    return true;
+}
+
 function waitForPlayerReady() {
     clearInterval(playerReadyCheckTimer);
     clearPlayerAutoplayNudges();
@@ -1277,6 +1317,7 @@ function waitForPlayerReady() {
 
     playerReadyCheckTimer = setInterval(async () => {
         checks += 1;
+        if (await checkFacebookPlayerFailure()) return;
 
         if (youtubeLoad && playerLoadingStartedAt && playbackClockNow() - playerLoadingStartedAt > 2200) {
             if (!lightYoutubePlayer) {
@@ -1323,6 +1364,13 @@ function waitForPlayerReady() {
         }
 
         if (checks > (youtubeLoad ? 14 : 80)) {
+            if (isFacebookUrl(playerWebview.src)) {
+                if (loadFacebookPageFallback()) return;
+                clearInterval(playerReadyCheckTimer);
+                playerReadyCheckTimer = null;
+                setPlayerError("Facebook did not provide a playable video. Open the Facebook tab, sign in if needed, and retry the original link.");
+                return;
+            }
             finishReady();
         }
     }, lightYoutubePlayer ? 320 : 180);
@@ -2063,6 +2111,22 @@ function isDailymotionVideoUrl(url) {
     return Boolean(getDailymotionVideoId(url));
 }
 
+function getFacebookVideoId(url) {
+    try {
+        const parsed = new URL(url);
+        if (!isFacebookUrl(parsed.href)) return "";
+        if (parsed.pathname.toLowerCase() === "/plugins/video.php") {
+            const target = parsed.searchParams.get("href");
+            if (!target) return "";
+            const nested = new URL(target);
+            if (!isFacebookUrl(nested.href) || nested.pathname.toLowerCase() === "/plugins/video.php") return "";
+            return getFacebookVideoId(nested.href);
+        }
+        const videoId = parsed.searchParams.get("v") || parsed.pathname.match(/\/(?:reel|videos)\/(\d+)(?:\/|$)/i)?.[1] || "";
+        return /^\d+$/.test(videoId) ? videoId : "";
+    } catch { return ""; }
+}
+
 function isFacebookVideoUrl(url) {
     try {
         const parsedUrl = new URL(url);
@@ -2331,6 +2395,11 @@ function isGoogleDrivePreviewUrl(url) {
 }
 
 function getPlayerUrl(url) {
+    if (isFacebookUrl(url)) {
+        const parsed = new URL(url);
+        const reelId = getFacebookVideoId(url);
+        if (reelId && /^\/reel\//i.test(parsed.pathname)) return `https://www.facebook.com/reel/${reelId}/`;
+    }
     if (isGoogleDriveDirectMediaUrl(url)) {
         return url;
     }
@@ -2361,6 +2430,7 @@ function getPlayerUrl(url) {
 }
 
 function loadPlayerWebviewUrl(url) {
+    facebookFallbackAttemptedFor = "";
     const playerUrl = getPlayerUrl(url);
 
     if (!isGoogleDriveUrl(url) || isGoogleDriveDirectMediaUrl(url)) {
@@ -3599,7 +3669,101 @@ async function disableBrowserPlayback() {
     } catch {}
 }
 
+async function cleanFacebookPlayer() {
+    try {
+        return await playerWebview.executeJavaScript(`
+            (() => {
+                const existing = window.__watchPartyFacebookVideo;
+                const video = existing?.isConnected ? existing : document.querySelector("video");
+                if (!video) return false;
+                window.__watchPartyFacebookVideo = video;
+                video.setAttribute("data-watch-party-facebook-video", "true");
+                let style = document.getElementById("watch-party-facebook-player");
+                if (!style) {
+                    style = document.createElement("style");
+                    style.id = "watch-party-facebook-player";
+                    style.textContent = \`
+                        html, body { margin: 0 !important; width: 100% !important; height: 100% !important; overflow: hidden !important; background: #000 !important; }
+                        body * { visibility: hidden !important; }
+                        video:not([data-watch-party-facebook-video]) { display: none !important; }
+                        video[data-watch-party-facebook-video] { visibility: visible !important; display: block !important; position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; max-width: none !important; max-height: none !important; object-fit: contain !important; transform: none !important; opacity: 1 !important; z-index: 2147483647 !important; }
+                    \`;
+                    document.documentElement.appendChild(style);
+                }
+                for (let parent = video.parentElement; parent && parent !== document.documentElement; parent = parent.parentElement) {
+                    ["transform", "filter", "perspective", "contain", "clip-path"].forEach(property => parent.style.setProperty(property, "none", "important"));
+                    parent.style.setProperty("overflow", parent === document.body ? "hidden" : "visible", "important");
+                    parent.style.setProperty("opacity", "1", "important");
+                }
+                document.querySelectorAll("video").forEach(other => {
+                    if (other === video) return;
+                    other.removeAttribute("data-watch-party-facebook-video");
+                    other.pause();
+                    other.muted = true;
+                });
+                if (!window.__watchPartyFacebookPlayGuard) {
+                    window.__watchPartyFacebookPlayGuard = true;
+                    document.addEventListener("play", event => {
+                        if (event.target.tagName === "VIDEO" && event.target !== window.__watchPartyFacebookVideo) {
+                            event.target.pause();
+                            event.target.muted = true;
+                        }
+                    }, true);
+                }
+                if (window.watchPartyPlayer?.facebookVideo === video) return true;
+                window.watchPartyPlayer = {
+                    facebookVideo: video,
+                    getState() {
+                        return { currentTime: Number(video.currentTime) || 0, duration: Number.isFinite(video.duration) ? video.duration : 0, paused: video.paused, ended: video.ended, ready: video.readyState >= 2, volume: Math.round(video.volume * 100), videoWidth: video.videoWidth, videoHeight: video.videoHeight };
+                    },
+                    setVolume(volume) {
+                        video.volume = Math.max(0, Math.min(100, Number(volume) || 0)) / 100;
+                        video.muted = video.volume === 0;
+                    },
+                    async setQuality(quality) {
+                        if (quality === "auto" && !this.manualQuality) return true;
+                        const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
+                        const settings = buttons.find(button => /^(?:video |player )?settings$/i.test(button.getAttribute("aria-label") || ""));
+                        if (!settings) return false;
+                        settings.click();
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        const menu = Array.from(document.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')).find(item => /^quality$/i.test(item.textContent.trim()));
+                        if (menu) {
+                            menu.click();
+                            await new Promise(resolve => setTimeout(resolve, 250));
+                        }
+                        const choices = Array.from(document.querySelectorAll('[role="menuitemradio"],[role="radio"]'));
+                        const wanted = quality === "auto" ? /^auto(?:matic)?(?:\\s|$)/i : new RegExp('^' + quality + 'p?(?:\\s|$)', 'i');
+                        const choice = choices.find(item => wanted.test(item.textContent.trim()));
+                        if (!choice) return false;
+                        choice.click();
+                        await new Promise(resolve => setTimeout(resolve, 250));
+                        const confirmed = choice.getAttribute("aria-checked") === "true" || Array.from(document.querySelectorAll('[aria-checked="true"]')).some(item => wanted.test(item.textContent.trim()));
+                        if (confirmed) this.manualQuality = quality !== "auto";
+                        return confirmed;
+                    },
+                    getQualityCapabilities() {
+                        const settings = Array.from(document.querySelectorAll('button,[role="button"]')).some(button => /^(?:video |player )?settings$/i.test(button.getAttribute("aria-label") || ""));
+                        return { manual: settings };
+                    },
+                    async setPaused(paused) {
+                        if (paused) video.pause();
+                        else await video.play().catch(() => {});
+                        return this.getState();
+                    },
+                    async seekTo(seconds, resume) {
+                        if (video.readyState >= 1 && Number.isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(video.duration, Number(seconds) || 0));
+                        return this.setPaused(!resume);
+                    }
+                };
+                return true;
+            })()
+        `);
+    } catch { return false; }
+}
+
 async function cleanPlayerView() {
+    if (isFacebookUrl(playerWebview.src)) return cleanFacebookPlayer();
     if (playerWebview.src === "about:blank") {
         setMediaStatus("Load player first", "is-offline");
         return false;
@@ -4233,7 +4397,7 @@ async function applyPlayerQuality(quality, options = {}) {
                 const requestedQuality = ${JSON.stringify(requestedQuality)};
                 if (window.watchPartyPlayer?.setQuality) {
                     return {
-                        ok: Boolean(window.watchPartyPlayer.setQuality(requestedQuality)),
+                        ok: Boolean(await window.watchPartyPlayer.setQuality(requestedQuality)),
                         label: requestedQuality
                     };
                 }
@@ -4391,7 +4555,7 @@ function updateHostControls() {
 
 async function readPlaybackState() {
     try {
-        return await playerWebview.executeJavaScript(`
+        const state = await playerWebview.executeJavaScript(`
             (() => {
                 if (window.watchPartyPlayer?.getState) {
                     const state = window.watchPartyPlayer.getState();
@@ -4400,7 +4564,10 @@ async function readPlaybackState() {
                             currentTime: Number(state.currentTime) || 0,
                             duration: Number(state.duration) || 0,
                             paused: state.paused !== false,
-                            ended: Boolean(state.ended)
+                            ended: Boolean(state.ended),
+                            videoWidth: Number(state.videoWidth) || 0,
+                            videoHeight: Number(state.videoHeight) || 0,
+                            manualQuality: window.watchPartyPlayer.getQualityCapabilities?.().manual
                         };
                     }
                 }
@@ -4478,6 +4645,23 @@ async function readPlaybackState() {
                 };
             })()
         `);
+        const facebook = isFacebookUrl(playerWebview.src);
+        const resolution = document.getElementById("actualQuality");
+        if (resolution) {
+            resolution.textContent = facebook && state?.videoWidth && state?.videoHeight ? `${state.videoWidth} × ${state.videoHeight}` : "";
+            resolution.title = "Actual decoded video resolution";
+        }
+        Array.from(qualitySelectEl.options).forEach(option => {
+            option.disabled = facebook && state?.manualQuality === false && option.value !== "auto";
+        });
+        if (facebook && state?.manualQuality === false) {
+            selectedQuality = "auto";
+            qualitySelectEl.value = "auto";
+            qualitySelectEl.title = "Facebook controls quality automatically for this video; no manual selector is exposed.";
+        } else {
+            qualitySelectEl.title = "Video quality";
+        }
+        return state;
     } catch {
         return null;
     }
@@ -5830,6 +6014,7 @@ playerWebview.addEventListener("did-stop-loading", async () => {
 
 playerWebview.addEventListener("did-fail-load", event => {
     const failedUrl = event?.validatedURL || event?.url || playerWebview.src || selectedVideoUrl || "";
+    if (event?.isMainFrame !== false && event?.errorCode !== -3 && isFacebookEmbedUrl(failedUrl) && loadFacebookPageFallback()) return;
     const isAbortedLoad = event?.errorCode === -3 || event?.errno === -3 || event?.code === "ERR_ABORTED";
     const driveFailure = isGoogleDriveUrl(failedUrl) || isGoogleDriveUrl(playerWebview.src || "") || isGoogleDriveUrl(selectedVideoUrl || "");
 
@@ -6287,9 +6472,19 @@ qualitySelectEl.addEventListener("change", async () => {
         return;
     }
 
-    selectedQuality = qualitySelectEl.value || "auto";
-    await applyPlayerQuality(selectedQuality);
-    emitHostPlaybackState();
+    const previousQuality = selectedQuality;
+    const requestedQuality = qualitySelectEl.value || "auto";
+    qualitySelectEl.disabled = true;
+    try {
+        if (await applyPlayerQuality(requestedQuality)) {
+            selectedQuality = requestedQuality;
+            emitHostPlaybackState();
+        } else {
+            qualitySelectEl.value = previousQuality;
+            const resolution = document.getElementById("actualQuality");
+            if (resolution) resolution.textContent = "Quality unavailable";
+        }
+    } finally { updateHostControls(); }
 });
 
 browserBackButton.onclick = () => {
