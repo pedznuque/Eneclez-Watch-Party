@@ -94,6 +94,10 @@
                     </div>
 
                     <div id="playerControls" class="player-controls">
+                        <div id="nowPlaying" class="now-playing" hidden>
+                            <div class="now-playing-copy"><span>Now playing</span><strong id="playingTitle"></strong></div>
+                            <button id="fullscreenControlsPin" class="fullscreen-controls-pin" type="button" aria-pressed="false" title="Keep fullscreen controls visible">Keep visible</button>
+                        </div>
                         <div class="player-control-row">
                             <button id="playPause" class="play-toggle" disabled title="Play" aria-label="Play">
                                 <svg id="playPauseIcon" class="play-pause-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -134,6 +138,7 @@
                         </div>
                     </div>
 
+                    <button id="fullscreenControlsToggle" class="fullscreen-controls-toggle" type="button" aria-controls="playerControls" aria-expanded="true" hidden>Hide controls</button>
                     <div id="fullscreenChat" class="fullscreen-chat" aria-label="Fullscreen chat" hidden>
                         <div id="fullscreenMessages" class="fullscreen-messages" aria-live="polite"></div>
                         <p id="fullscreenTyping" class="fullscreen-typing" aria-live="polite"></p>
@@ -238,6 +243,7 @@
                         <button id="browseDailymotion" class="browser-site-option" type="button">Dailymotion</button>
                         <button id="browseFacebook" class="browser-site-option" type="button">Facebook</button>
                         <button id="browseDrive" class="browser-site-option" type="button">Drive</button>
+                        <button id="browseTorrent" class="browser-site-option" type="button">Torrent</button>
                     </div>
                     <div class="browser-nav" aria-label="Browser navigation">
                         <button id="browserBack" class="icon-button" title="Back" aria-label="Back">
@@ -262,6 +268,35 @@
                 </div>
 
                 <div id="browserPane" class="media-container browser-container">
+                    <section id="torrentPanel" class="torrent-panel" hidden>
+                        <div class="torrent-heading">
+                            <div class="torrent-heading-copy"><span class="torrent-kicker">PEER TO PEER</span><h2>Torrent stream</h2><p>Your video, ready for the room.</p></div>
+                            <span id="torrentBadge" class="torrent-badge" data-state="idle">Not connected</span>
+                        </div>
+                        <div class="torrent-source-card">
+                            <form id="torrentForm" class="torrent-source-form">
+                                <label for="torrentMagnet">Magnet link</label>
+                                <div class="torrent-input-row"><input id="torrentMagnet" placeholder="Paste a magnet link…" maxlength="2048" autocomplete="off" spellcheck="false"><button id="loadTorrent" class="primary-button" type="submit">Find videos</button></div>
+                            </form>
+                            <div class="torrent-source-actions"><button id="chooseTorrentFile" class="ghost-button" type="button">Open .torrent file</button><button id="stopTorrent" class="torrent-stop-button" type="button" disabled>Stop transfer</button></div>
+                        </div>
+                        <div class="torrent-stats" aria-label="Transfer statistics">
+                            <div><span>Download</span><strong id="torrentDownload">—</strong><small id="torrentDownloadBits">Waiting for a torrent</small></div>
+                            <div><span>Upload</span><strong id="torrentUpload">—</strong><small id="torrentUploadBits">No active transfer</small></div>
+                            <div><span>Connected peers</span><strong id="torrentPeers">0</strong><small>Available connections</small></div>
+                            <div><span>Video cached</span><strong id="torrentCached">0%</strong><small id="torrentCacheSize">Selected video only</small></div>
+                        </div>
+                        <p id="torrentStatus" class="torrent-status" role="status" aria-live="polite">Paste a magnet link or open a .torrent file to find your videos.</p>
+                        <div id="torrentLibrary" class="torrent-library" hidden>
+                            <div class="torrent-library-heading"><label for="torrentFile">Choose your video</label><span id="torrentFileCount"></span></div>
+                            <input id="torrentSearch" type="search" placeholder="Search videos or episodes…" aria-label="Search torrent videos">
+                            <select id="torrentFile" disabled aria-label="Video file"></select>
+                            <p id="torrentFileInfo" class="torrent-file-info"></p>
+                            <progress id="torrentProgress" max="100" value="0" aria-label="Selected video cached"></progress>
+                            <div class="torrent-play-actions"><button id="playTorrent" class="primary-button" type="button" disabled>Play in room</button><button id="queueTorrent" class="ghost-button" type="button" disabled>Add to queue</button><span id="torrentPermissionHint"></span></div>
+                        </div>
+                        <details class="torrent-help"><summary>How streaming works</summary><p>Video pieces are buffered ahead and cached on this device. Each person in the room needs the updated app and reachable peers. Compatible MP4/WebM files start fastest; other supported codecs use compatibility playback. Use the Subtitles menu inside the video for embedded captions. Stop transfer ends this device’s downloading and uploading.</p></details>
+                    </section>
                     <div id="driveLinkControls" class="drive-link-controls" hidden>
                         <div class="drive-link-card">
                             <strong>Google Drive video</strong>
@@ -377,6 +412,8 @@
     </main>
 
     <script src="https://eneclez-watch-party.onrender.com/socket.io/socket.io.js"></script>
+    <script src="js/torrent-links.js"></script>
     <script src="js/room.js"></script>
+    <script src="js/torrent-panel.js"></script>
 </body>
 </html>

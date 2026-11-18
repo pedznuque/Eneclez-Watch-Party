@@ -1,4 +1,4 @@
-const APP_SERVER_ORIGIN = "https://eneclez-watch-party.onrender.com";
+const APP_SERVER_ORIGIN = window.watchParty?.serverOrigin || "https://eneclez-watch-party.onrender.com";
 const socket = io(APP_SERVER_ORIGIN);
 const params = new URLSearchParams(window.location.search);
 
@@ -52,6 +52,10 @@ const playerStage = document.getElementById("playerStage");
 const playerPane = document.getElementById("playerPane");
 const browserPane = document.getElementById("browserPane");
 const playerControls = document.getElementById("playerControls");
+const playingTitleEl = document.getElementById("playingTitle");
+const nowPlayingEl = document.getElementById("nowPlaying");
+const fullscreenControlsToggleButton = document.getElementById("fullscreenControlsToggle");
+const fullscreenControlsPinButton = document.getElementById("fullscreenControlsPin");
 const browserBackButton = document.getElementById("browserBack");
 const browserForwardButton = document.getElementById("browserForward");
 const browserReloadButton = document.getElementById("browserReload");
@@ -95,6 +99,11 @@ let controllerUsers = new Set();
 let lastPlaybackState = null;
 let applyingRemotePlayback = false;
 let selectedVideoUrl = "";
+const torrentPlayerLinks = new Map();
+let torrentLoadGeneration = 0;
+let pendingTorrentShareCancel = null;
+
+function isTorrentPlayerUrl(url) { return torrentPlayerLinks.has(url); }
 let driveFallbackAttemptedFor = "";
 let driveConfirmAttemptedFor = "";
 let facebookFallbackAttemptedFor = "";
@@ -134,6 +143,8 @@ let lastPlaybackProgressValue = "";
 let lastPlaybackProgressFill = "";
 let lastPlaybackPausedState = null;
 let fullscreenControlsIdleTimer = null;
+let fullscreenControlsPinned = localStorage.getItem("watchPartyKeepControls") === "true";
+let fullscreenControlsManuallyHidden = false;
 let selectedVolume = Number(localStorage.getItem("watchPartyVolume") || 100);
 let roomHasJoined = false;
 let localMicStream = null;
@@ -617,7 +628,7 @@ function getSyncedPlaybackTime(state) {
     const baseTime = Number(state?.currentTime) || 0;
     const duration = Number(state?.duration) || 0;
 
-    if (!state || state.paused) {
+    if (!state || state.paused || state.seeking || state.buffering) {
         return duration > 0 ? Math.min(duration, baseTime) : baseTime;
     }
 
@@ -656,6 +667,9 @@ function scheduleBrowserWebviewSizeSync() {
 }
 
 function normalizedVideoIdentity(url) {
+    if (isTorrentPlayerUrl(url)) return normalizedVideoIdentity(torrentPlayerLinks.get(url));
+    const torrent = parseTorrentLink(url);
+    if (torrent) return `torrent:${torrent.hash}:${torrent.fileIndex ?? "default"}`;
     try {
         const parsed = new URL(url);
         const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
@@ -684,6 +698,12 @@ function normalizedVideoIdentity(url) {
     }
 }
 
+function setPlayingTitle(title) {
+    const value = String(title || "").trim().slice(0, 300);
+    if (playingTitleEl) { playingTitleEl.textContent = value; playingTitleEl.title = value; }
+    if (nowPlayingEl) nowPlayingEl.hidden = !value;
+}
+
 function isSameVideoUrl(firstUrl, secondUrl) {
     const first = normalizedVideoIdentity(firstUrl);
     const second = normalizedVideoIdentity(secondUrl);
@@ -692,6 +712,7 @@ function isSameVideoUrl(firstUrl, secondUrl) {
 
 async function installPlayerEndGuard() {
     if (!playerWebview || playerWebview.src === "about:blank") return;
+    if (isTorrentPlayerUrl(playerWebview.src)) return;
     if (isLightYoutubePlayerUrl(playerWebview.src)) return;
 
     try {
@@ -809,7 +830,7 @@ function updateQueueCountdown(state) {
         Number(lastPlaybackState?.currentTime) ||
         0;
 
-    if (!nextItem || !Number.isFinite(duration) || duration <= 0) {
+    if (!nextItem || state?.paused || state?.seeking || state?.buffering || !Number.isFinite(duration) || duration <= 0) {
         hideQueueCountdown();
         return;
     }
@@ -958,6 +979,7 @@ function setPlayerLoading(isLoading, message = "Loading video") {
 }
 
 function setBrowserLoading(isLoading, message = "Loading browser") {
+    if (browserPane.classList.contains("is-torrent-browser")) isLoading = false;
     if (!browserLoadingStateEl) return;
 
     browserPane.classList.toggle("is-loading", Boolean(isLoading));
@@ -968,6 +990,7 @@ function setBrowserLoading(isLoading, message = "Loading browser") {
 }
 
 async function mutePlayerMediaDuringLoading() {
+    if (isTorrentPlayerUrl(playerWebview.src)) return;
     if (playerWebview.src === "about:blank") return;
     if (isLightYoutubePlayerUrl(playerWebview.src)) return;
 
@@ -985,6 +1008,7 @@ async function mutePlayerMediaDuringLoading() {
 }
 
 async function restorePlayerMediaAfterLoading() {
+    if (isTorrentPlayerUrl(playerWebview.src)) return;
     if (playerWebview.src === "about:blank") return;
     if (isLightYoutubePlayerUrl(playerWebview.src)) return;
 
@@ -1272,6 +1296,29 @@ async function checkFacebookPlayerFailure() {
 function waitForPlayerReady() {
     clearInterval(playerReadyCheckTimer);
     clearPlayerAutoplayNudges();
+    if (isTorrentPlayerUrl(playerWebview.src)) {
+        const expected = playerWebview.src;
+        let attempts = 0;
+        let checking = false;
+        setPlayerLoading(false);
+        const timer = setInterval(async () => {
+            if (checking || playerWebview.src !== expected) return;
+            checking = true;
+            try {
+            const state = await playerWebview.executeJavaScript("window.watchPartyPlayer?.getState() || null").catch(() => null);
+            if (playerWebview.src !== expected || playerReadyCheckTimer !== timer) return;
+            if (!state?.ready && !state?.error && ++attempts < 480) return;
+            clearInterval(timer);
+            playerReadyCheckTimer = null;
+            if (state?.error || !state?.ready) { setPlayerError(state?.error || "Torrent buffering timed out. Check available peers and retry."); return; }
+            setMediaStatus("Torrent ready", "is-online");
+            applyPlayerVolume(selectedVolume);
+            if (lastPlaybackState) applyPlaybackState(lastPlaybackState);
+            } finally { checking = false; }
+        }, 250);
+        playerReadyCheckTimer = timer;
+        return;
+    }
     const readyUrl = String(selectedVideoUrl || playerWebview.src || "").trim();
     const canShowLoading = readyUrl !== lastPlayerReadyUrl || playerPane.classList.contains("is-empty");
     if (canShowLoading) {
@@ -1383,6 +1430,7 @@ function clearPlayerAutoplayNudges() {
 
 function schedulePlayerAutoplayNudge() {
     clearPlayerAutoplayNudges();
+    if (isTorrentPlayerUrl(playerWebview.src)) return;
 
     if (!canControlPlayer() || playerWebview.src === "about:blank") return;
 
@@ -1779,7 +1827,7 @@ function syncCompactLayoutState() {
     restoreCompactChatHeight();
 
     if (!compactBrowserTouched) {
-        setCompactBrowserOpen(false);
+        setCompactBrowserOpen(browserPane.classList.contains("is-torrent-browser"));
     }
 }
 
@@ -2039,6 +2087,7 @@ function isGoogleDriveUrl(url) {
 }
 
 function isSupportedMediaUrl(url) {
+    if (parseTorrentLink(url) || isTorrentPlayerUrl(url)) return true;
     return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url) || isGoogleDriveApiStreamUrl(url);
 }
 
@@ -2271,6 +2320,7 @@ function isFacebookEmbedUrl(url) {
 }
 
 function isSupportedVideoUrl(url) {
+    if (parseTorrentLink(url)) return true;
     return isBilibiliVideoUrl(url) || isYoutubeVideoUrl(url) || isDailymotionVideoUrl(url) || isFacebookVideoUrl(url) || isGoogleDriveVideoUrl(url) || isGoogleDriveApiStreamUrl(url);
 }
 
@@ -2429,7 +2479,36 @@ function getPlayerUrl(url) {
     return url;
 }
 
-function loadPlayerWebviewUrl(url) {
+async function loadPlayerWebviewUrl(url) {
+    const generation = ++torrentLoadGeneration;
+    const torrent = parseTorrentLink(url);
+    playerPane.classList.toggle("is-torrent-player", Boolean(torrent));
+    if (torrent) {
+        restoreDriveBrowserToBrowserPane();
+        playerPane.classList.remove("is-drive-player");
+        clearPlayerError();
+        setPlayerEmptyState(false);
+        setPlayerLoading(true, "Loading torrent metadata");
+        try {
+            let result = await window.watchParty?.prepareTorrent({ magnet: url, fileIndex: torrent.fileIndex });
+            if (!result?.ok) throw new Error(result?.error || "Torrent streaming requires the updated desktop app.");
+            if (generation !== torrentLoadGeneration) return;
+            if (!result.playerUrl) {
+                const file = [...result.files].sort((first, second) => second.length - first.length)[0];
+                if (!file) throw new Error("No supported video files found in this torrent.");
+                result = await window.watchParty.prepareTorrent({ magnet: url, fileIndex: file.index });
+            }
+            if (generation !== torrentLoadGeneration) return;
+            if (!result.ok || !result.playerUrl) throw new Error(result.error || "Could not prepare torrent player");
+            torrentPlayerLinks.set(result.playerUrl, url);
+            playerWebview.src = result.playerUrl;
+            const selectedFile = result.files?.find(file => file.index === Number(new URL(result.playerUrl).searchParams.get("file")));
+            if (selectedFile) setPlayingTitle(selectedFile.name);
+            updateHostControls();
+        } catch (error) { if (generation === torrentLoadGeneration) setPlayerError(error.message); }
+        return;
+    }
+    if (isTorrentPlayerUrl(playerWebview.src)) window.watchParty?.stopTorrent().catch(() => {});
     facebookFallbackAttemptedFor = "";
     const playerUrl = getPlayerUrl(url);
 
@@ -2443,6 +2522,7 @@ function loadPlayerWebviewUrl(url) {
     }
     playerPane.classList.toggle("is-drive-player", isGoogleDriveUrl(url));
     playerWebview.src = playerUrl;
+    updateHostControls();
 }
 
 function loadDriveFallbackPlayer(reason = "Drive preview failed") {
@@ -2582,6 +2662,7 @@ function supportedSitesLabel() {
 
 function getSupportedMediaUrl() {
     const rawUrl = mediaUrlInput.value.trim();
+    if (parseTorrentLink(rawUrl)) return rawUrl;
 
     if (!rawUrl) {
         setMediaStatus("Paste a link", "is-offline");
@@ -2607,7 +2688,36 @@ function getSupportedMediaUrl() {
     }
 }
 
-function openPlayerFromUrl(url) {
+function shareTorrentWithRoom(request) {
+    pendingTorrentShareCancel?.();
+    if (socket.connected === false) {
+        addSystemMessage("Torrent is playing locally. Reconnect to the room server, then choose Play in room again to share it.");
+        return;
+    }
+    let done = false, timer;
+    const cleanup = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        socket.off("mediaLoaded", onShared);
+        socket.off("disconnect", onDisconnect);
+        if (pendingTorrentShareCancel === cleanup) pendingTorrentShareCancel = null;
+    };
+    const report = message => { cleanup(); if (selectedVideoUrl === request.url) addSystemMessage(message); };
+    const onShared = media => { if (media?.url && isSameVideoUrl(media.url, request.url)) cleanup(); };
+    const onDisconnect = () => report("Connection lost before torrent sharing was confirmed. Reconnect, then choose Play in room again.");
+    pendingTorrentShareCancel = cleanup;
+    socket.on("mediaLoaded", onShared);
+    socket.on("disconnect", onDisconnect);
+    timer = setTimeout(() => report("Torrent is playing locally, but the room server has not confirmed sharing. Update or restart the room server, then choose Play in room again."), 7000);
+    socket.emit("loadMedia", request, response => {
+        if (done) return;
+        if (response?.ok) cleanup();
+        else if (response?.ok === false) report(response.message || "The room server rejected this torrent. Check room permissions and server support.");
+    });
+}
+
+function openPlayerFromUrl(url, titleHint = "") {
     if (!canControlPlayer()) {
         setMediaStatus("Ask host for control", "is-offline");
         return false;
@@ -2619,18 +2729,22 @@ function openPlayerFromUrl(url) {
     }
 
     selectedVideoUrl = url;
+    setPlayingTitle(titleHint || titleFromUrl(url));
     driveFallbackAttemptedFor = "";
     driveConfirmAttemptedFor = "";
     mediaUrlInput.value = url;
     loadPlayerWebviewUrl(url);
     setMediaStatus("Loading", "");
 
-    socket.emit("loadMedia", {
+    const request = {
         room: roomCode,
         username,
         url,
-        title: titleFromUrl(url)
-    });
+        title: titleHint || titleFromUrl(url)
+    };
+    if (parseTorrentLink(url)) {
+        shareTorrentWithRoom(request);
+    } else socket.emit("loadMedia", request);
 
     return true;
 }
@@ -2695,6 +2809,20 @@ async function hasActivePlayer() {
     return state.currentTime > 0.5 || state.paused === false;
 }
 
+let browserNavigationGeneration = 0;
+function navigateBrowserTo(url) {
+    const generation = ++browserNavigationGeneration;
+    const failed = error => {
+        if (generation !== browserNavigationGeneration || /ERR_ABORTED|\(-3\)/.test(String(error?.message))) return;
+        setBrowserLoading(false);
+        if (!browserPane.classList.contains("is-torrent-browser")) setMediaStatus("Browser could not connect. Retry when online.", "is-offline");
+    };
+    try {
+        if (typeof browserWebview.loadURL === "function") return browserWebview.loadURL(url).catch(failed);
+        browserWebview.src = url;
+    } catch (error) { failed(error); }
+}
+
 function resetBrowserToHome() {
     clearTimeout(resetBrowserTimer);
 
@@ -2702,11 +2830,7 @@ function resetBrowserToHome() {
         const currentUrl = browserWebview.getURL?.() || browserWebview.src || "";
 
         if (currentUrl !== activeBrowserHome) {
-            if (typeof browserWebview.loadURL === "function") {
-                browserWebview.loadURL(activeBrowserHome);
-            } else {
-                browserWebview.src = activeBrowserHome;
-            }
+            navigateBrowserTo(activeBrowserHome);
         }
     }, 120);
 }
@@ -2719,10 +2843,17 @@ function setBrowserSite(site, options = {}) {
         youtube: YOUTUBE_HOME,
         dailymotion: DAILYMOTION_HOME,
         facebook: FACEBOOK_HOME,
-        drive: DRIVE_HOME
+        drive: DRIVE_HOME,
+        torrent: "about:blank"
     };
 
     activeBrowserHome = homes[site] || BILIBILI_HOME;
+    const showingTorrent = site === "torrent";
+    document.getElementById("torrentPanel").hidden = !showingTorrent;
+    document.getElementById("browseTorrent").classList.toggle("is-active", showingTorrent);
+    browserPane.classList.toggle("is-torrent-browser", showingTorrent);
+    [browserBackButton, browserForwardButton, browserReloadButton].forEach(button => { button.disabled = showingTorrent; });
+    if (showingTorrent) { setBrowserLoading(false); setCompactBrowserOpen(true); }
 
     browseBilibiliButton.classList.toggle("is-active", activeBrowserHome === BILIBILI_HOME);
     browseYoutubeButton.classList.toggle("is-active", activeBrowserHome === YOUTUBE_HOME);
@@ -2737,20 +2868,12 @@ function setBrowserSite(site, options = {}) {
 
     if (options.load !== false) {
         if (activeBrowserHome === DRIVE_HOME) {
-            if (typeof browserWebview.loadURL === "function") {
-                browserWebview.loadURL(DRIVE_HOME);
-            } else {
-                browserWebview.src = DRIVE_HOME;
-            }
+            navigateBrowserTo(DRIVE_HOME);
             mediaUrlInput.value = driveLinkInput?.value.trim() || "";
             return;
         }
 
-        if (typeof browserWebview.loadURL === "function") {
-            browserWebview.loadURL(activeBrowserHome);
-        } else {
-            browserWebview.src = activeBrowserHome;
-        }
+        navigateBrowserTo(activeBrowserHome);
 
         mediaUrlInput.value = activeBrowserHome;
     }
@@ -3763,6 +3886,7 @@ async function cleanFacebookPlayer() {
 }
 
 async function cleanPlayerView() {
+    if (isTorrentPlayerUrl(playerWebview.src)) return true;
     if (isFacebookUrl(playerWebview.src)) return cleanFacebookPlayer();
     if (playerWebview.src === "about:blank") {
         setMediaStatus("Load player first", "is-offline");
@@ -4238,6 +4362,8 @@ function scheduleCleanPlayerView() {
 }
 
 function titleFromUrl(url) {
+    const torrent = parseTorrentLink(url);
+    if (torrent) return torrent.name;
     try {
         const parsedUrl = new URL(url);
         const host = parsedUrl.hostname.replace(/^www\./, "");
@@ -4367,7 +4493,7 @@ function updatePlaybackTime(state) {
         updatePlayPauseIcon(paused);
     }
 
-    if (!isSeekingPlayback) {
+    if (!isSeekingPlayback && !seekCommitInProgress) {
         const progress = duration > 0 ? Math.round((currentTime / duration) * 1000) : 0;
         const progressValue = String(Math.min(1000, Math.max(0, progress)));
 
@@ -4551,6 +4677,7 @@ function updateHostControls() {
     stopPlayerButton.disabled = !canControl || !hasMedia;
     playbackProgressEl.disabled = !canControl || !hasMedia;
     qualitySelectEl.disabled = !canControl || !hasMedia;
+    window.refreshTorrentControls?.();
 }
 
 async function readPlaybackState() {
@@ -4565,6 +4692,9 @@ async function readPlaybackState() {
                             duration: Number(state.duration) || 0,
                             paused: state.paused !== false,
                             ended: Boolean(state.ended),
+                            ready: state.ready,
+                            seeking: Boolean(state.seeking),
+                            buffering: Boolean(state.buffering),
                             videoWidth: Number(state.videoWidth) || 0,
                             videoHeight: Number(state.videoHeight) || 0,
                             manualQuality: window.watchPartyPlayer.getQualityCapabilities?.().manual
@@ -4761,16 +4891,16 @@ async function applyPlaybackState(state) {
                         : 0;
                     const isPauseMatched = Boolean(playerState.paused) === shouldPause;
 
-                    if (playerState.ready && drift <= 1.15 && isPauseMatched) {
+                    if ((playerState.ready || playerState.seeking) && drift <= 1.15 && isPauseMatched) {
                         return "in-sync";
                     }
 
-                    if (playerState.ready && drift <= 1.15 && !isPauseMatched && window.watchPartyPlayer?.setPaused) {
+                    if ((playerState.ready || playerState.seeking) && drift <= 1.15 && !isPauseMatched && window.watchPartyPlayer?.setPaused) {
                         await window.watchPartyPlayer.setPaused(shouldPause);
                         return "pause-only";
                     }
 
-                    await window.watchPartyPlayer.seekTo(targetTime, !shouldPause);
+                    await window.watchPartyPlayer.seekTo(targetTime, !shouldPause, { sync: true });
                     return "seek";
                 }
 
@@ -4866,6 +4996,7 @@ function loadBilibili({ url, title, loadedBy, loadedAt }) {
     setPlayerEmptyState(false);
     syncPlayerWebviewSize();
     selectedVideoUrl = nextUrl;
+    setPlayingTitle(title || titleFromUrl(nextUrl));
     driveFallbackAttemptedFor = "";
     driveConfirmAttemptedFor = "";
     mediaUrlInput.value = nextUrl;
@@ -5039,6 +5170,11 @@ socket.on("disconnect", () => {
     setConnection("Disconnected", "is-offline");
 });
 
+socket.on("connect_error", () => {
+    setRoomLoading(false);
+    setConnection("Server unavailable — reconnecting", "is-offline");
+});
+
 socket.on("roomError", message => {
     roomHasJoined = false;
     setRoomLoading(false);
@@ -5177,6 +5313,8 @@ socket.on("voiceSignal", async data => {
 });
 socket.on("mediaLoaded", loadBilibili);
 socket.on("mediaStopped", async data => {
+    torrentLoadGeneration += 1;
+    if (isTorrentPlayerUrl(playerWebview.src) || parseTorrentLink(selectedVideoUrl)) await window.watchParty?.stopTorrent();
     hideQueueCountdown();
 
     if (document.fullscreenElement === playerStage) {
@@ -5185,8 +5323,9 @@ socket.on("mediaStopped", async data => {
 
     restoreDriveBrowserToBrowserPane();
     playerWebview.src = "about:blank";
-    playerPane.classList.remove("is-drive-player");
+    playerPane.classList.remove("is-drive-player", "is-torrent-player");
     selectedVideoUrl = "";
+    setPlayingTitle("");
     driveConfirmAttemptedFor = "";
     lastLoadedMediaToken = "";
     lastPlayerReadyUrl = "";
@@ -6293,6 +6432,7 @@ playPauseButton.onclick = async () => {
 
 stopPlayerButton.onclick = () => {
     if (!canControlPlayer() || playerWebview.src === "about:blank") return;
+    if (isTorrentPlayerUrl(playerWebview.src)) window.watchParty?.stopTorrent().catch(() => {});
 
     socket.emit("stopMedia", {
         room: roomCode,
@@ -6328,6 +6468,7 @@ async function commitPlaybackSeek() {
     if (!canControlPlayer() || seekCommitInProgress) return;
 
     seekCommitInProgress = true;
+    const requestedProgress = Number(playbackProgressEl.value);
 
     try {
         const state = await readPlaybackState();
@@ -6342,7 +6483,7 @@ async function commitPlaybackSeek() {
             0,
             Math.min(
                 duration,
-                duration * (Number(playbackProgressEl.value) / 1000)
+                duration * (requestedProgress / 1000)
             )
         );
 
@@ -6493,7 +6634,7 @@ browserBackButton.onclick = () => {
         return;
     }
 
-    browserWebview.loadURL(activeBrowserHome);
+    navigateBrowserTo(activeBrowserHome);
 };
 
 browserForwardButton.onclick = () => {
@@ -6532,11 +6673,7 @@ openDriveLinkButton?.addEventListener("click", () => {
 
     mediaUrlInput.value = url;
     setBrowserSite("drive", { load: false });
-    if (typeof browserWebview.loadURL === "function") {
-        browserWebview.loadURL(url);
-    } else {
-        browserWebview.src = url;
-    }
+    navigateBrowserTo(url);
     setBrowserLoading(true, "Loading Drive video");
     setMediaStatus("Open the Drive video", "");
 });
@@ -6562,11 +6699,7 @@ queueDriveLinkButton?.addEventListener("click", () => {
 openDriveLoginButton?.addEventListener("click", () => {
     setBrowserSite("drive", { load: false });
     const authUrl = `${APP_SERVER_ORIGIN}/api/drive/auth/start`;
-    if (typeof browserWebview.loadURL === "function") {
-        browserWebview.loadURL(authUrl);
-    } else {
-        browserWebview.src = authUrl;
-    }
+    navigateBrowserTo(authUrl);
     setBrowserLoading(true, "Connecting Drive");
     setMediaStatus("Sign in to Drive API", "");
 });
@@ -6591,34 +6724,82 @@ playerFullscreenButton.onclick = async () => {
     }
 };
 
-function setFullscreenControlsActive() {
+function updateFullscreenControlsButtons() {
+    const visible = !playerStage?.classList.contains("is-fullscreen-controls-idle");
+    if (fullscreenControlsToggleButton) {
+        fullscreenControlsToggleButton.textContent = visible ? "Hide controls" : "Show controls";
+        fullscreenControlsToggleButton.setAttribute("aria-expanded", String(visible));
+    }
+    if (fullscreenControlsPinButton) {
+        fullscreenControlsPinButton.textContent = fullscreenControlsPinned ? "Auto-hide" : "Keep visible";
+        fullscreenControlsPinButton.setAttribute("aria-pressed", String(fullscreenControlsPinned));
+        fullscreenControlsPinButton.title = fullscreenControlsPinned ? "Allow controls to hide automatically" : "Keep fullscreen controls visible";
+    }
+}
+
+function hideFullscreenControls(manual = false) {
     if (!playerStage || document.fullscreenElement !== playerStage) return;
+    clearTimeout(fullscreenControlsIdleTimer);
+    fullscreenControlsManuallyHidden = manual;
+    if (playerControls?.contains(document.activeElement)) fullscreenControlsToggleButton?.focus({ preventScroll: true });
+    playerStage.classList.remove("is-fullscreen-controls-active");
+    playerStage.classList.add("is-fullscreen-controls-idle");
+    if (playerControls) playerControls.inert = true;
+    updateFullscreenControlsButtons();
+}
+
+function setFullscreenControlsActive(force = false) {
+    if (!playerStage || document.fullscreenElement !== playerStage) return;
+    if (fullscreenControlsManuallyHidden && force !== true) return;
+    fullscreenControlsManuallyHidden = false;
 
     playerStage.classList.remove("is-fullscreen-controls-idle");
     playerStage.classList.add("is-fullscreen-controls-active");
+    if (playerControls) playerControls.inert = false;
+    updateFullscreenControlsButtons();
 
     clearTimeout(fullscreenControlsIdleTimer);
+    if (fullscreenControlsPinned) return;
     fullscreenControlsIdleTimer = setTimeout(() => {
         if (document.fullscreenElement !== playerStage) return;
         if (
             document.activeElement === fullscreenMessageInput ||
             document.activeElement === messageInput ||
-            playerControls?.contains(document.activeElement)
+            isSeekingPlayback ||
+            playerControls?.matches(":hover") ||
+            (playerControls?.contains(document.activeElement) && document.activeElement?.matches?.(":focus-visible"))
         ) {
             setFullscreenControlsActive();
             return;
         }
 
-        playerStage.classList.remove("is-fullscreen-controls-active");
-        playerStage.classList.add("is-fullscreen-controls-idle");
+        hideFullscreenControls(false);
     }, 2200);
 }
 
 function clearFullscreenControlsIdle() {
     clearTimeout(fullscreenControlsIdleTimer);
     fullscreenControlsIdleTimer = null;
+    fullscreenControlsManuallyHidden = false;
     playerStage?.classList.remove("is-fullscreen-controls-active", "is-fullscreen-controls-idle");
+    if (playerControls) playerControls.inert = false;
+    updateFullscreenControlsButtons();
 }
+
+fullscreenControlsToggleButton?.addEventListener("click", event => {
+    event.stopPropagation();
+    if (playerStage.classList.contains("is-fullscreen-controls-idle")) setFullscreenControlsActive(true);
+    else hideFullscreenControls(true);
+});
+fullscreenControlsPinButton?.addEventListener("click", () => {
+    fullscreenControlsPinned = !fullscreenControlsPinned;
+    localStorage.setItem("watchPartyKeepControls", String(fullscreenControlsPinned));
+    setFullscreenControlsActive(true);
+});
+
+playerWebview.addEventListener("ipc-message", event => {
+    if (event.channel === "watch-party-player-activity") setFullscreenControlsActive();
+});
 
 ["pointermove", "pointerdown", "keydown", "wheel"].forEach(eventName => {
     playerStage?.addEventListener(eventName, setFullscreenControlsActive, { passive: true });
@@ -6626,6 +6807,7 @@ function clearFullscreenControlsIdle() {
 
 document.addEventListener("fullscreenchange", () => {
     const isFullscreen = document.fullscreenElement === playerStage;
+    if (fullscreenControlsToggleButton) fullscreenControlsToggleButton.hidden = !isFullscreen;
     playerFullscreenButton.classList.toggle("is-fullscreen", isFullscreen);
     playerFullscreenButton.title = isFullscreen ? "Exit fullscreen" : "Enter fullscreen";
     playerFullscreenButton.setAttribute("aria-label", isFullscreen ? "Exit fullscreen" : "Enter fullscreen");
@@ -6648,7 +6830,8 @@ document.addEventListener("fullscreenchange", () => {
         setFullscreenEffectTrayVisible(false);
         clearFullscreenControlsIdle();
     } else {
-        setFullscreenControlsActive();
+        fullscreenControlsManuallyHidden = false;
+        setFullscreenControlsActive(true);
     }
 
     setFullscreenChatVisible(isFullscreenChatVisible);
@@ -6686,9 +6869,13 @@ setInterval(() => {
 }, 500);
 
 setInterval(async () => {
-    if (!shouldBroadcastPlaybackState() || applyingRemotePlayback) return;
+    if (!shouldBroadcastPlaybackState() || applyingRemotePlayback || isSeekingPlayback || seekCommitInProgress) return;
 
     const state = await readPlaybackState();
+
+    // Explicit controls send their intended position immediately. Periodic
+    // updates must wait until the player has actually reached that position.
+    if (applyingRemotePlayback || isSeekingPlayback || seekCommitInProgress || state?.seeking || state?.buffering || state?.ready === false) return;
 
     if (state?.ended) {
         handlePlaybackEnded();

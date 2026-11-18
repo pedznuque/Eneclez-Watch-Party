@@ -1,6 +1,57 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, session, webContents } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const path = require("path");
+const fs = require("fs");
+const { TorrentService } = require("./torrent-service.cjs");
+let torrentService;
+let torrentTask = Promise.resolve();
+let torrentGeneration = 0;
+
+function requireMainSender(event) {
+ if (!mainWindow || event.sender !== mainWindow.webContents) throw new Error("Unsupported torrent request origin");
+}
+
+ipcMain.handle("watch-party-torrent", (event, request = {}) => {
+ requireMainSender(event);
+ const generation = torrentGeneration;
+ const task = torrentTask.then(async () => {
+  try {
+   if (generation !== torrentGeneration) throw new Error("Torrent request canceled");
+   torrentService ||= new TorrentService(path.join(app.getPath("userData"), "torrent-cache"));
+   const metadata = await torrentService.prepare(request.magnet);
+   return { ok: true, ...metadata, playerUrl: Number.isInteger(request.fileIndex) ? torrentService.player(request.fileIndex) : null };
+  } catch (error) { return { ok: false, error: error.message }; }
+ });
+ torrentTask = task.catch(() => {});
+ return task;
+});
+ipcMain.handle("watch-party-torrent-file", async event => {
+ requireMainSender(event);
+ const result = await dialog.showOpenDialog(mainWindow, { properties: ["openFile"], filters: [{ name: "BitTorrent metadata", extensions: ["torrent"] }] });
+ if (result.canceled) return { canceled: true };
+ try {
+  const filename = result.filePaths[0];
+  if (fs.statSync(filename).size > 10 * 1024 * 1024) throw new Error("Torrent metadata file is too large");
+  await torrentTask;
+  torrentService ||= new TorrentService(path.join(app.getPath("userData"), "torrent-cache"));
+  return { ok: true, ...(await torrentService.prepare(fs.readFileSync(filename))) };
+ } catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle("watch-party-torrent-status", event => {
+ requireMainSender(event);
+ try { return { ok: true, ...torrentService.describe() }; } catch { return { ok: false }; }
+});
+ipcMain.handle("watch-party-torrent-stop", async event => {
+ requireMainSender(event);
+ torrentGeneration += 1;
+ await torrentService?.stop();
+ return { ok: true };
+});
+ipcMain.on("watch-party-server-origin", event => {
+ requireMainSender(event);
+ event.returnValue = process.env.WATCH_PARTY_SERVER_URL || "https://eneclez-watch-party.onrender.com";
+});
+app.on("before-quit", () => { torrentService?.destroy().catch(() => {}); });
 
 let activeChatWebContentsId = null;
 let mainWindow = null;

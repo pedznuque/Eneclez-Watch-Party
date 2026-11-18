@@ -1,4 +1,17 @@
 (() => {
+    // Mouse activity inside a native webview does not bubble to the room page.
+    // Forward only an activity signal so its fullscreen controls can wake up.
+    try {
+        const { ipcRenderer } = require("electron");
+        let lastActivity = -Infinity;
+        const reportActivity = () => {
+            const now = performance.now();
+            if (now - lastActivity < 250) return;
+            lastActivity = now;
+            ipcRenderer.sendToHost("watch-party-player-activity");
+        };
+        for (const type of ["pointermove", "pointerdown", "keydown", "wheel"]) document.addEventListener(type, reportActivity, { passive: true });
+    } catch {}
     const YOUTUBE_HOST_RE = /(^|\.)youtube(?:-nocookie)?\.com$/i;
     const GOOGLE_VIDEO_RE = /(^|\.)googlevideo\.com$/i;
     const AD_KEY_RE = /(?:^|_|-)(ad|ads|adslot|adslots|adplacement|adplacements|playerads|playerad|adbreak|adbreaks|adparams|admarkers|adcue|adcuepoints|adtracking|adurl)(?:$|_|-)/i;

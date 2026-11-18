@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("watchParty", {
     version: "2.1",
+    serverOrigin: ipcRenderer.sendSync("watch-party-server-origin"),
+    prepareTorrent(request) { return ipcRenderer.invoke("watch-party-torrent", request); },
+    chooseTorrentFile() { return ipcRenderer.invoke("watch-party-torrent-file"); },
+    torrentStatus() { return ipcRenderer.invoke("watch-party-torrent-status"); },
+    stopTorrent() { return ipcRenderer.invoke("watch-party-torrent-stop"); },
     setChatFocused(focused) {
         ipcRenderer.send("watch-party-chat-focus", Boolean(focused));
     },

@@ -13,3 +13,9 @@ build/
 out/
 .DS_Store
 Thumbs.db
+client/test-artifacts/
+client/.tmp-app-ui*.out
+client/.tmp-app-ui*.err
+client/.tmp-app-ui*.path
+client/.tmp-room-regression.*
+client/src/.tmp-app-ui-room.html

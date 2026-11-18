@@ -23,6 +23,8 @@ permissions:
 jobs:
   build-windows:
     name: Build Windows installer
+    # Publishing a draft with verified assets must not rebuild and replace them.
+    if: github.event_name != 'release' || !contains(github.event.release.assets.*.name, 'latest.yml')
     runs-on: windows-latest
 
     defaults:

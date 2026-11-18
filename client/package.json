@@ -1,16 +1,21 @@
 {
   "name": "eneclez-watch-party",
   "productName": "Eneclez Watch Party",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "A private desktop watch party app for shared viewing and chat.",
   "author": "Gerald Nuque",
   "main": "main.js",
   "scripts": {
+    "test": "node --test test/torrent-service.test.cjs test/torrent-controls.test.cjs test/torrent-panel.test.cjs test/torrent-recovery.test.cjs test/torrent-sharing.test.cjs test/fullscreen-controls.test.cjs test/server-rooms.test.cjs",
+    "test:ui": "electron test/app-ui.electron.cjs",
+    "test:room": "electron test/room-viewers.electron.cjs",
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win nsis --publish never"
   },
   "build": {
+    "npmRebuild": false,
+    "asarUnpack": ["node_modules/ffmpeg-static/**"],
     "appId": "com.eneclez.watchparty",
     "productName": "Eneclez Watch Party",
     "directories": {
@@ -26,6 +31,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "torrent-service.cjs",
       "package.json",
       "src/**/*"
     ],
@@ -56,6 +62,8 @@
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "ffmpeg-static": "^5.3.0",
+    "webtorrent": "^3.0.21"
   }
 }

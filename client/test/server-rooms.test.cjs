@@ -1,0 +1,56 @@
+const test = require("node:test"), assert = require("node:assert/strict");
+const fs = require("node:fs"), path = require("node:path");
+const { createRequire } = require("node:module"), { once } = require("node:events");
+const { io } = require("../../server/node_modules/socket.io/client-dist/socket.io.js");
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+test("room membership, duplicate names, rejoin, chat identity, queue permissions and host promotion", { timeout: 20000 }, async t => {
+    const directory = path.resolve(__dirname, "../../server");
+    const server = new Function("require", "__dirname", "process", fs.readFileSync(path.join(directory, "server.js"), "utf8") + "\nreturn server;")(
+        createRequire(path.join(directory, "server.js")), directory, { env: { ...process.env, PORT: "0" } });
+    if (!server.listening) await once(server, "listening");
+    const capabilityResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/capabilities`);
+    assert.equal(capabilityResponse.status, 200);
+    const capabilities = await capabilityResponse.json();
+    assert.equal(capabilities.features.torrents, true);
+    assert.equal(capabilities.features.mediaLoadAcknowledgement, true);
+    const clients = [];
+    t.after(async () => { for (const client of clients) client.disconnect(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+    async function client(room, username, create = true) {
+        const socket = io(`http://127.0.0.1:${server.address().port}`, { transports: ["websocket"], forceNew: true }); clients.push(socket);
+        await once(socket, "connect");
+        const joined = once(socket, "roomUsers"); socket.emit("joinRoom", { room, username, create }); await joined;
+        return socket;
+    }
+    const a = await client("room-a", "Alex");
+    let users = once(a, "roomUsers");
+    a.emit("joinRoom", { room: "room-a", username: "Alex" });
+    assert.equal((await users)[0].users.length, 1, "same-socket rejoin must preserve a room with one user");
+    const b = await client("room-b", "Alex");
+    const guest = await client("room-b", "Bob", false);
+    const media = { room: "room-b", url: "https://www.youtube.com/watch?v=abcdefghijk", username: "Alex" };
+    assert.equal((await new Promise(resolve => a.emit("loadMedia", media, resolve))).ok, false, "same display name in another room must not grant control");
+    assert.equal((await new Promise(resolve => a.emit("setController", { room: "room-b", target: "Bob", allowed: true }, resolve))).ok, false);
+    const duplicate = io(`http://127.0.0.1:${server.address().port}`, { transports: ["websocket"], forceNew: true }); clients.push(duplicate);
+    await once(duplicate, "connect");
+    const error = once(duplicate, "roomError"); duplicate.emit("joinRoom", { room: "room-b", username: "Bob" });
+    assert.match((await error)[0], /display name is already/i);
+    assert.equal((await new Promise(resolve => guest.emit("loadMedia", media, resolve))).ok, false);
+    let chatCount = 0, queueCount = 0;
+    guest.on("chat", () => { chatCount++; }); guest.on("queueUpdated", () => { queueCount++; });
+    a.emit("chat", { room: "room-b", username: "Bob", message: "must not appear" });
+    a.emit("addQueue", { ...media, title: "must not appear" });
+    await sleep(120); assert.equal(chatCount, 0); assert.equal(queueCount, 0);
+    const message = once(b, "chat"); guest.emit("chat", { room: "room-b", username: "Alex", message: "hello" });
+    assert.equal((await message)[0].username, "Bob", "chat identity must come from the joined socket");
+    const queued = once(guest, "queueUpdated"); b.emit("addQueue", { ...media, title: "allowed" });
+    const item = (await queued)[0][0]; assert.equal(item.addedBy, "Alex");
+    const queueEvents = queueCount;
+    a.emit("removeQueue", { room: "room-b", id: item.id }); await sleep(120);
+    assert.equal(queueCount, queueEvents, "an equal name in another room must not own this queue item");
+    assert.equal((await new Promise(resolve => b.emit("setController", { room: "room-b", target: "Bob", allowed: true }, resolve))).ok, true);
+    assert.equal((await new Promise(resolve => guest.emit("loadMedia", media, resolve))).ok, true);
+    users = once(guest, "roomUsers"); b.disconnect();
+    assert.equal((await users)[0].host, "Bob");
+    assert.equal((await new Promise(resolve => guest.emit("loadMedia", media, resolve))).ok, true);
+});

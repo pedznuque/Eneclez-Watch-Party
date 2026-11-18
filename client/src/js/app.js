@@ -41,7 +41,7 @@ function setLobbyLoading(isLoading, title = "Opening room", text = "Connecting t
 }
 
 function saveUsername() {
-    const username = usernameInput.value.trim() || randomName();
+    const username = usernameInput.value.trim().slice(0, 24) || randomName();
     localStorage.setItem("username", username);
     usernameInput.value = username;
     updateSettingsSnapshot();
@@ -54,7 +54,8 @@ function updateSettingsSnapshot() {
     }
 
     if (settingsVolume) {
-        const volume = Number(localStorage.getItem("watchPartyVolume") || 100);
+        const savedVolume = Number(localStorage.getItem("watchPartyVolume") || 100);
+        const volume = Number.isFinite(savedVolume) ? savedVolume : 100;
         settingsVolume.textContent = `${Math.max(0, Math.min(100, Math.round(volume)))}%`;
     }
 }
@@ -233,12 +234,11 @@ settingsUpdateCheckButton?.addEventListener("click", async () => {
     }
 
     setUpdateStatus("Checking for updates...", { busy: true });
-    const result = await window.watchParty.checkForUpdates();
-
-    if (result?.message) {
-        setUpdateStatus(result.message, { busy: result.state === "checking" });
-    } else {
-        setUpdateStatus("Checking for updates...", { busy: true });
+    try {
+        const result = await window.watchParty.checkForUpdates();
+        setUpdateStatus(result?.message || "Update check finished.", { busy: result?.state === "checking" || result?.state === "downloading" });
+    } catch {
+        setUpdateStatus("Could not check for updates. Try again when connected.");
     }
 });
 
