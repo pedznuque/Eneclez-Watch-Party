@@ -42,6 +42,7 @@ const io = new Server(server, {
 });
 
 const rooms = {};
+const SERVER_CAPABILITIES = { protocolVersion: 2, features: { torrents: true, mediaLoadAcknowledgement: true } };
 let driveTokens = GOOGLE_DRIVE_REFRESH_TOKEN
     ? {
         refresh_token: GOOGLE_DRIVE_REFRESH_TOKEN,
@@ -60,6 +61,11 @@ app.get("/", (req, res) => {
 
 app.get("/youtube-player.html", (req, res) => {
     res.sendFile(path.join(CLIENT_SRC_DIR, "youtube-player.html"));
+});
+
+app.get("/api/capabilities", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(SERVER_CAPABILITIES);
 });
 
 app.get("/drive-player.html", (req, res) => {
@@ -387,7 +393,19 @@ function isGoogleDriveUrl(url) {
 }
 
 function isSupportedMediaUrl(url) {
+    if (isTorrentVideoUrl(url)) return true;
     return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url);
+}
+
+function isTorrentVideoUrl(value) {
+    try {
+        if (typeof value !== "string" || value.length > 2048) return false;
+        const url = new URL(value);
+        const file = url.searchParams.get("wpFile");
+        return url.protocol === "magnet:" &&
+            url.searchParams.getAll("xt").some(topic => /^urn:btih:([a-f0-9]{40}|[a-z2-7]{32})$/i.test(topic)) &&
+            (file === null || /^\d{1,5}$/.test(file));
+    } catch { return false; }
 }
 
 function publicUsers(room) {
@@ -418,12 +436,17 @@ function emitVoiceUsers(room) {
     io.to(room).emit("voiceUsers", publicVoiceUsers(room));
 }
 
+function isRoomMember(room, socket) {
+    return Boolean(rooms[room] && socket.data.room === room && rooms[room].users.get(socket.id) === socket.data.username);
+}
+
 function canControlRoom(room, socket) {
     const username = socket.data.username;
     const roomState = rooms[room];
 
     return Boolean(
         roomState &&
+        isRoomMember(room, socket) &&
         username &&
         (username === roomState.host || roomState.controllers?.has(username))
     );
@@ -524,6 +547,7 @@ function leaveCurrentRoom(socket) {
 }
 
 io.on("connection", socket => {
+    socket.emit("serverCapabilities", SERVER_CAPABILITIES);
     socket.on("createRoom", data => {
         const room = cleanText(data.room);
         const username = cleanText(data.username, "Guest");
@@ -556,7 +580,13 @@ io.on("connection", socket => {
             rooms[room] = createRoomState(username);
         }
 
-        leaveCurrentRoom(socket);
+        const duplicateName = Array.from(rooms[room].users).some(([id, name]) => id !== socket.id && name === username);
+        if (duplicateName) {
+            socket.emit("roomError", "That display name is already in this room. Choose a different name in the lobby and rejoin.");
+            return;
+        }
+        // Rejoining the same room must not delete it when this is its only user.
+        if (socket.data.room !== room) leaveCurrentRoom(socket);
 
         socket.join(room);
         socket.data.room = room;
@@ -581,10 +611,10 @@ io.on("connection", socket => {
 
     socket.on("chat", data => {
         const room = cleanText(data.room);
-        const username = cleanText(data.username, "Guest");
+        const username = socket.data.username;
         const message = cleanText(data.message, "", 500);
 
-        if (!rooms[room] || !message) return;
+        if (!isRoomMember(room, socket) || !message) return;
 
         io.to(room).emit("chat", {
             username,
@@ -595,9 +625,9 @@ io.on("connection", socket => {
 
     socket.on("typing", data => {
         const room = cleanText(data.room);
-        const username = cleanText(data.username, "Guest");
+        const username = socket.data.username;
 
-        if (rooms[room]) {
+        if (isRoomMember(room, socket)) {
             socket.to(room).emit("typing", { username });
         }
     });
@@ -714,7 +744,7 @@ io.on("connection", socket => {
             return;
         }
 
-        if (socket.data.username !== rooms[room].host) {
+        if (!isRoomMember(room, socket) || socket.data.username !== rooms[room].host) {
             respond({ ok: false, message: "Only the host can allow control." });
             return;
         }
@@ -745,12 +775,15 @@ io.on("connection", socket => {
         respond({ ok: true, controllers: publicControllers(room) });
     });
 
-    socket.on("loadMedia", data => {
+    socket.on("loadMedia", (data, reply) => {
         const room = cleanText(data.room);
         const url = cleanUrl(data.url);
         const title = cleanText(data.title, "Video", 140);
 
-        if (!rooms[room] || !url || !isSupportedMediaUrl(url) || !canControlRoom(room, socket)) return;
+        if (!rooms[room] || !url || !isSupportedMediaUrl(url) || !canControlRoom(room, socket)) {
+            if (typeof reply === "function") reply({ ok: false, message: "The room server could not share this video. Check control permission and supported video links." });
+            return;
+        }
 
         rooms[room].currentMedia = {
             url,
@@ -767,6 +800,7 @@ io.on("connection", socket => {
 
         io.to(room).emit("mediaLoaded", rooms[room].currentMedia);
         io.to(room).emit("mediaPlayback", currentPlaybackState(room));
+        if (typeof reply === "function") reply({ ok: true });
     });
 
     socket.on("stopMedia", data => {
@@ -799,7 +833,7 @@ io.on("connection", socket => {
         const title = cleanText(data.title, "Video", 140);
         const thumbnail = cleanUrl(data.thumbnail);
 
-        if (!rooms[room] || !url || !isSupportedMediaUrl(url)) return;
+        if (!isRoomMember(room, socket) || !url || !isSupportedMediaUrl(url)) return;
 
         rooms[room].queue.push({
             id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -817,7 +851,7 @@ io.on("connection", socket => {
         const room = cleanText(data.room);
         const id = cleanText(data.id, "", 120);
 
-        if (!rooms[room] || !id) return;
+        if (!isRoomMember(room, socket) || !id) return;
 
         const queueItem = rooms[room].queue.find(item => item.id === id);
         const username = socket.data.username;
