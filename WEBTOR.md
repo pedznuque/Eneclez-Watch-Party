@@ -61,3 +61,17 @@ Webtor's own verification; the app does not bypass it.
 
 Validated with 46 tests, including nine simulated minutes of guest heartbeats,
 and full Electron UI checks covering native prompts and verification recovery.
+
+## v1.0.22 unexpected pause recovery
+
+A native pause with Play still requested is reported as recovering, so the
+periodic room broadcaster does not convert it into a room pause command.
+After 1.5 seconds, decoded and playable video gets a resume attempt, at most
+three attempts ten seconds apart. A deliberate pause, native seek, provider
+recovery card, verification dialog, exhausted segment or media error prevents
+automatic resume. Native media errors and recovery status remain visible.
+An exhausted partial stream is buffering rather than the end of the movie.
+
+Validated with 50 tests, including an accelerated 25-minute session, and
+Electron UI checks for unexpected pause recovery. This does not establish the
+cause of a particular live provider interruption around twenty minutes.

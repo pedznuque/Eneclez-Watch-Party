@@ -89,8 +89,8 @@ function webtorControlRuntime() {
     if(location.protocol!=='https:'||!['webtor.io','www.webtor.io'].includes(location.hostname))return null;
     const movie=()=>document.querySelector('.wt-player video,video.player');
     if(!movie())return null;
-    if(window.watchPartyPlayer?.provider==='webtor'&&document.getElementById('watch-party-webtor-app-controls'))return window.watchPartyPlayer.getState();
-    const control={requestedPaused:movie().paused,pending:null,error:'',remote:null,lastSessionSeek:-Infinity};
+    if(window.watchPartyPlayer?.provider==='webtor'&&document.getElementById('watch-party-webtor-app-controls'))return window.watchPartyPlayer.maintainPlayback();
+    const control={requestedPaused:movie().paused,pending:null,error:'',remote:null,lastSessionSeek:-Infinity,pauseSince:null,recoveries:0,nextResumeAt:0};
     const style=document.createElement('style');style.id='watch-party-webtor-app-controls';
     style.textContent='.wt-player-controls{opacity:0!important;visibility:hidden!important;pointer-events:none!important}.wt-player-top-overlay,.wt-player-top,.wt-player-topbar,.wt-player-title,.wt-player-top-share,.wt-player-overlay--play{display:none!important}.watch-party-webtor-target video{pointer-events:none!important}dialog,dialog *{pointer-events:auto!important}';
     document.head.append(style);
@@ -101,11 +101,14 @@ function webtorControlRuntime() {
         const full=Number(video.dataset.duration)||Number(document.querySelector('.wt-player-progress')?.getAttribute('aria-valuemax'));
         const duration=Number.isFinite(full)&&full>0?full:Number.isFinite(video.duration)?video.duration:0;
         const actual=(Number(video.currentTime)||0)+offset;
+        const needsInteraction=Boolean(document.querySelector('dialog[open]:not(#subtitles),.wt-recover'));
+        const prematureEnd=video.ended&&duration>0&&actual<duration-1;
+        const unexpectedPause=video.paused&&!control.requestedPaused&&!needsInteraction&&!video.ended&&!video.error;
         if(control.pending&&(Math.abs(actual-control.pending.time)<1.5&&!video.seeking&&video.readyState>=2))control.pending=null;
         if(control.pending&&Date.now()-control.pending.at>45000){control.pending=null;control.error='Webtor could not finish seeking. Retry that position.';}
         return {provider:'webtor',ready:video.readyState>=2&&video.videoWidth>0,currentTime:control.pending?.time??actual,duration,paused:video.paused,requestedPaused:control.requestedPaused,
-            ended:video.ended&&(!duration||actual>=duration-1),seeking:Boolean(control.pending||video.seeking||Object.hasOwn(video.dataset,'transferSeeking')),buffering:video.readyState<3,
-            videoWidth:video.videoWidth,videoHeight:video.videoHeight,error:control.error,needsInteraction:Boolean(document.querySelector('dialog[open]:not(#subtitles)')),interaction:'provider',subtitles:subtitleChoices(),subtitleSettings:Boolean(document.getElementById('subtitles'))};
+            ended:video.ended&&(!duration||actual>=duration-1),seeking:Boolean(control.pending||video.seeking||Object.hasOwn(video.dataset,'transferSeeking')),buffering:video.readyState<3||prematureEnd||unexpectedPause,
+            videoWidth:video.videoWidth,videoHeight:video.videoHeight,error:video.error?.message||control.error,needsInteraction,interaction:'provider',subtitles:subtitleChoices(),subtitleSettings:Boolean(document.getElementById('subtitles'))};
     }
     function subtitleChoices(){
         const items=Array.from(document.querySelectorAll('#subtitles .subtitle[data-id]'));
@@ -146,7 +149,21 @@ function webtorControlRuntime() {
         else control.error='Webtor is not ready to seek. Wait for buffering to finish.';
         return state();
     }
-    window.watchPartyPlayer={provider:'webtor',getState:state,getQualityCapabilities:()=>({manual:false}),setPaused:pause,seekTo:seek,
+    async function maintainPlayback(){
+        const before=state(),video=movie();
+        if(!video)return before;
+        if(!video.paused){control.pauseSince=null;control.recoveries=0;control.error='';return before;}
+        // Preserve user intent. Do not click provider recovery/verification
+        // prompts, restart an ended segment at zero, or fight a native seek.
+        if(control.requestedPaused||before.needsInteraction||before.seeking||video.ended||video.error||video.readyState<3){control.pauseSince=null;return before;}
+        const now=Date.now();control.pauseSince??=now;
+        if(now-control.pauseSince<1500||now<control.nextResumeAt)return before;
+        if(control.recoveries>=3){control.error='Webtor stayed paused. Toggle pause/play to retry, or use the recovery prompt in the player.';return state();}
+        control.recoveries++;control.nextResumeAt=now+10000;
+        await pause(false);return state();
+    }
+    window.watchPartyPlayer={provider:'webtor',getState:state,maintainPlayback,getQualityCapabilities:()=>({manual:false}),
+        setPaused(paused){control.recoveries=0;control.pauseSince=null;control.nextResumeAt=0;control.error='';return pause(paused);},seekTo:seek,
         async syncTo(time,paused,options={}){
             if(!Number.isFinite(time)||time<0)return state();
             const before=state(),video=movie(),now=Date.now(),hold=Boolean(paused||options.paused);
@@ -156,7 +173,7 @@ function webtorControlRuntime() {
             control.remote={time,paused:hold,at:now};
             // A room heartbeat must not interrupt a provider's in-flight seek
             // or buffering recovery. Each viewer owns its streaming session.
-            if(!video||!before.ready||before.seeking||before.buffering||before.needsInteraction)return before;
+            if(!video||!before.ready||before.seeking||video.readyState<3||video.ended||video.error||before.needsInteraction)return before;
             const drift=time-before.currentTime,local=bufferedTarget(video,time);
             if(Math.abs(drift)>1.15&&local!==null){video.currentTime=local;video.playbackRate=1;}
             else if(Math.abs(drift)>1.15&&(jump||(Math.abs(drift)>8&&now-control.lastSessionSeek>30000)))await seek(time,!hold);

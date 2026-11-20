@@ -4786,6 +4786,11 @@ async function readPlaybackState() {
         if(isWebtorUrl(playerWebview.src)){
             const state=await installWebtorPage(playerWebview,'player');
             if(state?.needsInteraction){setPlayerLoading(false);setMediaStatus(state.interaction==='verification'?'Webtor requires verification on this device. Complete the check in the player.':state.interaction==='provider'?'Webtor needs your response. Use the prompt in the player.':'Complete Webtor sign-in in the player','');}
+            if(!state?.needsInteraction){
+                if(state?.error)setMediaStatus(state.error,'is-offline');
+                else if(state?.buffering&&!state.requestedPaused)setMediaStatus('Webtor is buffering or recovering playback.','');
+                else if(state?.ready)setMediaStatus('Ready','is-online');
+            }
             updateWebtorSubtitleUi(state);
             return state?{provider:'webtor',currentTime:0,duration:0,paused:true,ready:false,...state}:null;
         }

@@ -182,6 +182,11 @@ app.whenReady().then(async () => {
         await run("document.getElementById('playPause').click();volumeControlEl.value=40;volumeControlEl.dispatchEvent(new Event('input'))");
         await until(async()=>await webtorPlayer("!document.querySelector('video').paused&&document.querySelector('video').volume===.4"),'app resumes Webtor and controls volume');
         console.log('PASS app Webtor pause/resume, full duration, native transcoder seek beyond cached segment, real subtitle clicks/cues/Off and volume; duplicate provider bar hidden');
+        await webtorPlayer("document.querySelector('video').pause()");
+        const unexpected=await run('readPlaybackState()');
+        assert.equal(unexpected.requestedPaused,false);assert.equal(unexpected.buffering,true);
+        await until(async()=>{await run('readPlaybackState()');return await webtorPlayer("!document.querySelector('video').paused")},'unexpected provider pause resumes without broadcasting a deliberate room pause');
+        console.log('PASS decoded Webtor playback recovers an unexpected pause while retaining Play intent');
         await webtorPlayer("document.getElementById('grace-cta').showModal();document.querySelector('video').pause()");
         await webtorPlayer("window.watchPartyPlayer.syncTo(window.watchPartyPlayer.getState().currentTime,false)");
         assert.equal(await webtorPlayer("document.querySelector('video').paused"),true,'room heartbeat must not answer a provider prompt');
