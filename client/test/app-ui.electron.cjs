@@ -127,9 +127,9 @@ app.whenReady().then(async () => {
             if(url.pathname==='/stream-video'){
                 assert.equal(request.method,'POST');streamPosts++;postOrigins.push(request.headers.get('origin'));
                 return new Response(`<div class="wt-player-stage"><div class="wt-player"><video autoplay controls data-duration="600" data-run-offset="0" data-session-seek-url="/session/seek" src="/movie.mp4"></video><div class="wt-player-controls"><div class="wt-player-progress" role="slider" aria-valuemax="600" style="height:12px;width:100%"></div><button>Native play controls</button></div></div></div>
-                    <dialog id="subtitles"><button class="subtitle" data-id="none" data-default="true">Off</button><button class="subtitle" data-id="en" data-label="English" data-provider="Sidecar">English</button><button class="subtitle" data-id="es" data-label="Spanish" data-provider="MediaProbe">Spanish</button></dialog>
+                    <dialog id="grace-cta"><button id="answerGrace">Continue watching</button></dialog><dialog id="subtitles"><button class="subtitle" data-id="none" data-default="true">Off</button><button class="subtitle" data-id="en" data-label="English" data-provider="Sidecar">English</button><button class="subtitle" data-id="es" data-label="Spanish" data-provider="MediaProbe">Spanish</button></dialog>
                     <script>
-                    const video=document.querySelector('video');window.nativeSeekCalls=0;
+                    const video=document.querySelector('video');window.nativeSeekCalls=0;document.getElementById('answerGrace').onclick=()=>{document.getElementById('grace-cta').close();video.play()};
                     document.querySelector('.wt-player-progress').addEventListener('pointerdown',()=>document.addEventListener('pointerup',event=>{
                         const rect=document.querySelector('.wt-player-progress').getBoundingClientRect(),target=(event.clientX-rect.left)/rect.width*600;
                         const offset=Math.floor(target/30)*30;video.dataset.runOffset=offset;video.currentTime=target-offset;window.nativeSeekCalls++;
@@ -182,6 +182,21 @@ app.whenReady().then(async () => {
         await run("document.getElementById('playPause').click();volumeControlEl.value=40;volumeControlEl.dispatchEvent(new Event('input'))");
         await until(async()=>await webtorPlayer("!document.querySelector('video').paused&&document.querySelector('video').volume===.4"),'app resumes Webtor and controls volume');
         console.log('PASS app Webtor pause/resume, full duration, native transcoder seek beyond cached segment, real subtitle clicks/cues/Off and volume; duplicate provider bar hidden');
+        await webtorPlayer("document.getElementById('grace-cta').showModal();document.querySelector('video').pause()");
+        await webtorPlayer("window.watchPartyPlayer.syncTo(window.watchPartyPlayer.getState().currentTime,false)");
+        assert.equal(await webtorPlayer("document.querySelector('video').paused"),true,'room heartbeat must not answer a provider prompt');
+        assert.equal(await webtorPlayer("getComputedStyle(document.getElementById('grace-cta')).display==='none'"),false,'provider prompt must survive video-only layout');
+        await webtorPlayer("document.getElementById('answerGrace').click()");
+        await until(async()=>await webtorPlayer("!document.querySelector('video').paused"),'provider prompt response resumes playback');
+        console.log('PASS provider grace prompt remains visible and room synchronization waits for the viewer response');
+        await webtorPlayer("document.body.innerHTML='<div>Checking that you are not a robot</div><form action=\"/stream-video\" method=\"post\"><button>Stream</button></form>';window.challengeSubmits=0;document.addEventListener('submit',event=>{window.challengeSubmits++;event.preventDefault()})");
+        for(let i=0;i<3;i++){
+            const blocked=await run('readPlaybackState()');
+            assert.equal(blocked.provider,'webtor');assert.equal(blocked.ready,false);assert.equal(blocked.needsInteraction,true);
+        }
+        assert.equal(await webtorPlayer('window.challengeSubmits'),0,'verification cannot cause an automatic submit loop');
+        assert.equal(await webtorPlayer("document.getElementById('watch-party-webtor-layout')"),null,'verification page is not hidden by video-only layout');
+        console.log('PASS provider verification stays visible, reports blocked playback and does not resubmit or read codec-probe clocks');
         await run("document.getElementById('stopPlayer').click()");
         await until(async()=>await run("playerWebview.src==='about:blank'"),'Webtor stop');
         await webtorSession.protocol.unhandle('https');mockWebtor=false;

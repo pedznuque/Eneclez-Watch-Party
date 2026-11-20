@@ -57,10 +57,17 @@ function webtorPageRuntime(role) {
         return {ready:false};
     }
     if(!video){
+        const verification=/checking that you are not a robot|verify (?:that )?you are human|verification required/i.test(document.body?.innerText||'');
+        if(verification){
+            document.getElementById('watch-party-webtor-layout')?.remove();
+            document.getElementById('watch-party-webtor-app-controls')?.remove();
+            document.querySelectorAll('.watch-party-webtor-hidden').forEach(node=>node.classList.remove('watch-party-webtor-hidden'));
+            return {provider:'webtor',ready:false,paused:true,needsInteraction:true,interaction:'verification'};
+        }
         const forms=Array.from(document.forms).filter(form=>{const u=new URL(form.action,location.href);return u.origin===location.origin&&/^\/stream-video\/?$/.test(u.pathname);});
         if(forms.length===1&&!model.started){model.started=true;forms[0].requestSubmit();}
         const error=/^CSRF token mismatch/i.test(document.body?.innerText?.trim()||'')?'Webtor rejected the session. Retry the video.':'';
-        return {ready:false,error,needsInteraction:/\/(login|auth)(\/|$)/.test(location.pathname)};
+        return {provider:'webtor',ready:false,paused:true,error,needsInteraction:/\/(login|auth)(\/|$)/.test(location.pathname)};
     }
     const ready=video.readyState>=2&&video.videoWidth>0;
     if(ready&&!video.closest('.watch-party-webtor-target')){
@@ -68,13 +75,13 @@ function webtorPageRuntime(role) {
         if(target&&target!==document.body){
             target.classList.add('watch-party-webtor-target');
             for(let node=target;node.parentElement;node=node.parentElement){node.parentElement.classList.add('watch-party-webtor-ancestor');for(const sibling of node.parentElement.children)if(sibling!==node)sibling.classList.add('watch-party-webtor-hidden');}
-            const modal=document.getElementById('subtitles');for(let node=modal;node;node=node.parentElement)node.classList.remove('watch-party-webtor-hidden');
-            const style=document.createElement('style');style.textContent=`html,body{margin:0!important;padding:0!important;height:100%!important;overflow:hidden!important;background:#000!important}.watch-party-webtor-hidden{display:none!important}.watch-party-webtor-ancestor{position:static!important;transform:none!important;contain:none!important}.watch-party-webtor-target{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;max-width:none!important;background:#000!important;z-index:100!important}.watch-party-webtor-target video{width:100%!important;height:100%!important;object-fit:contain!important}`;document.head.append(style);
+            for(const modal of document.querySelectorAll('dialog'))for(let node=modal;node;node=node.parentElement)node.classList.remove('watch-party-webtor-hidden');
+            const style=document.createElement('style');style.id='watch-party-webtor-layout';style.textContent=`html,body{margin:0!important;padding:0!important;height:100%!important;overflow:hidden!important;background:#000!important}.watch-party-webtor-hidden{display:none!important}.watch-party-webtor-ancestor{position:static!important;transform:none!important;contain:none!important}.watch-party-webtor-target{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;max-width:none!important;background:#000!important;z-index:100!important}.watch-party-webtor-target video{width:100%!important;height:100%!important;object-fit:contain!important}`;document.head.append(style);
         }
     }
     if(video.paused&&!model.hasPlayed)video.play().catch(()=>{});
     if(!video.paused)model.hasPlayed=true;
-    return {ready,error:video.error?.message||'',selection:selection()||model.selection};
+    return {ready,hasVideo:true,error:video.error?.message||'',selection:selection()||model.selection};
 }
 // Adapter for the app's existing player interface. Native provider handlers
 // still own transcoder seeks and lazy subtitle loading.
@@ -82,10 +89,10 @@ function webtorControlRuntime() {
     if(location.protocol!=='https:'||!['webtor.io','www.webtor.io'].includes(location.hostname))return null;
     const movie=()=>document.querySelector('.wt-player video,video.player');
     if(!movie())return null;
-    if(window.watchPartyPlayer?.provider==='webtor')return window.watchPartyPlayer.getState();
-    const control={requestedPaused:movie().paused,pending:null,error:''};
+    if(window.watchPartyPlayer?.provider==='webtor'&&document.getElementById('watch-party-webtor-app-controls'))return window.watchPartyPlayer.getState();
+    const control={requestedPaused:movie().paused,pending:null,error:'',remote:null,lastSessionSeek:-Infinity};
     const style=document.createElement('style');style.id='watch-party-webtor-app-controls';
-    style.textContent='.wt-player-controls{opacity:0!important;visibility:hidden!important;pointer-events:none!important}.wt-player-top-overlay,.wt-player-top,.wt-player-topbar,.wt-player-title,.wt-player-top-share,.wt-player-overlay--play{display:none!important}.watch-party-webtor-target{pointer-events:none!important}#subtitles,#subtitles *{pointer-events:auto!important}';
+    style.textContent='.wt-player-controls{opacity:0!important;visibility:hidden!important;pointer-events:none!important}.wt-player-top-overlay,.wt-player-top,.wt-player-topbar,.wt-player-title,.wt-player-top-share,.wt-player-overlay--play{display:none!important}.watch-party-webtor-target video{pointer-events:none!important}dialog,dialog *{pointer-events:auto!important}';
     document.head.append(style);
     function state(){
         const video=movie();if(!video)return {provider:'webtor',ready:false,paused:true,duration:0,currentTime:0};
@@ -97,8 +104,8 @@ function webtorControlRuntime() {
         if(control.pending&&(Math.abs(actual-control.pending.time)<1.5&&!video.seeking&&video.readyState>=2))control.pending=null;
         if(control.pending&&Date.now()-control.pending.at>45000){control.pending=null;control.error='Webtor could not finish seeking. Retry that position.';}
         return {provider:'webtor',ready:video.readyState>=2&&video.videoWidth>0,currentTime:control.pending?.time??actual,duration,paused:video.paused,requestedPaused:control.requestedPaused,
-            ended:video.ended&&(!duration||actual>=duration-1),seeking:Boolean(control.pending||video.seeking||video.dataset.transferSeeking),buffering:video.readyState<3,
-            videoWidth:video.videoWidth,videoHeight:video.videoHeight,error:control.error,subtitles:subtitleChoices(),subtitleSettings:Boolean(document.getElementById('subtitles'))};
+            ended:video.ended&&(!duration||actual>=duration-1),seeking:Boolean(control.pending||video.seeking||Object.hasOwn(video.dataset,'transferSeeking')),buffering:video.readyState<3,
+            videoWidth:video.videoWidth,videoHeight:video.videoHeight,error:control.error,needsInteraction:Boolean(document.querySelector('dialog[open]:not(#subtitles)')),interaction:'provider',subtitles:subtitleChoices(),subtitleSettings:Boolean(document.getElementById('subtitles'))};
     }
     function subtitleChoices(){
         const items=Array.from(document.querySelectorAll('#subtitles .subtitle[data-id]'));
@@ -107,6 +114,7 @@ function webtorControlRuntime() {
     }
     async function pause(paused){
         const video=movie();if(!video)return state();control.requestedPaused=Boolean(paused);
+        if(video.paused===Boolean(paused)||video.seeking||control.pending||Object.hasOwn(video.dataset,'transferSeeking'))return state();
         if(window.__watchPartyWebtorPage)window.__watchPartyWebtorPage.hasPlayed=true;
         window.dispatchEvent(new CustomEvent(paused?'player_paused':'player_play'));
         if(paused)video.pause();
@@ -117,14 +125,21 @@ function webtorControlRuntime() {
         }
         return state();
     }
+    function bufferedTarget(video,time){
+        const local=time-(Number(video.dataset.runOffset)||0);
+        for(let i=0;i<(video.buffered?.length||0);i++)if(local>=video.buffered.start(i)&&local<=video.buffered.end(i)-1)return local;
+        return null;
+    }
     async function seek(time,resume){
         if(!Number.isFinite(time)||time<0)return state();
         const before=state(),video=movie();if(!video||before.seeking)return before;
         const target=Math.max(0,Math.min(before.duration||time,time));
         await pause(!resume);control.error='';
+        const local=bufferedTarget(video,target);
+        if(local!==null){video.currentTime=local;video.playbackRate=1;return state();}
         const bar=document.querySelector('.wt-player-progress'),rect=bar?.getBoundingClientRect();
         if(bar&&rect.width>0&&before.duration>0&&!bar.classList.contains('wt-player-progress--disabled')){
-            control.pending={time:target,at:Date.now()};
+            control.lastSessionSeek=Date.now();control.pending={time:target,at:Date.now()};
             const point={bubbles:true,cancelable:true,pointerId:1,pointerType:'mouse',button:0,clientX:rect.left+rect.width*target/before.duration,clientY:rect.top+rect.height/2};
             bar.dispatchEvent(new PointerEvent('pointerdown',point));document.dispatchEvent(new PointerEvent('pointerup',point));
         }else if(!video.dataset.sessionSeekUrl){video.currentTime=Math.max(0,target-(Number(video.dataset.runOffset)||0));}
@@ -132,7 +147,22 @@ function webtorControlRuntime() {
         return state();
     }
     window.watchPartyPlayer={provider:'webtor',getState:state,getQualityCapabilities:()=>({manual:false}),setPaused:pause,seekTo:seek,
-        async syncTo(time,paused,options={}){const before=state();if(!before.seeking&&Math.abs(before.currentTime-time)>1.15)await seek(time,!paused&&!options.paused);else await pause(Boolean(paused||options.paused));return state();},
+        async syncTo(time,paused,options={}){
+            if(!Number.isFinite(time)||time<0)return state();
+            const before=state(),video=movie(),now=Date.now(),hold=Boolean(paused||options.paused);
+            const previous=control.remote;
+            const expected=previous?previous.time+(previous.paused?0:(now-previous.at)/1000):time;
+            const jump=Boolean(previous&&Math.abs(time-expected)>4);
+            control.remote={time,paused:hold,at:now};
+            // A room heartbeat must not interrupt a provider's in-flight seek
+            // or buffering recovery. Each viewer owns its streaming session.
+            if(!video||!before.ready||before.seeking||before.buffering||before.needsInteraction)return before;
+            const drift=time-before.currentTime,local=bufferedTarget(video,time);
+            if(Math.abs(drift)>1.15&&local!==null){video.currentTime=local;video.playbackRate=1;}
+            else if(Math.abs(drift)>1.15&&(jump||(Math.abs(drift)>8&&now-control.lastSessionSeek>30000)))await seek(time,!hold);
+            else video.playbackRate=!hold&&Math.abs(drift)>.25?(drift>0?1.03:.97):1;
+            await pause(hold);return state();
+        },
         setVolume(value){const video=movie();if(video){video.volume=Math.max(0,Math.min(1,Number(value)/100));video.muted=Number(value)<=0;}return state();},
         selectSubtitle(id){
             const item=Array.from(document.querySelectorAll('#subtitles .subtitle[data-id]')).find(item=>item.dataset.id===id);

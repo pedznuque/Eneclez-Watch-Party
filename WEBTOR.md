@@ -45,3 +45,19 @@ Validation:
   loaded WebVTT cues and Off.
 - `npm run test:ui -- --live-webtor` additionally checks the full handoff against
   Webtor's public Sintel demo. It requires network access.
+
+## v1.0.21 guest playback recovery
+
+Room heartbeats leave an already playing session alone. Buffered corrections
+seek locally; small unbuffered drift uses gentle playback-rate correction.
+Large jumps use native session seeking with a cooldown for periodic drift.
+Empty `data-transfer-seeking` attributes still represent an active seek.
+
+Native provider dialogs, including the grace prompt, remain visible and
+interactive. Synchronization waits for the viewer to answer provider prompts.
+A robot-check page is reported as awaiting verification and never automatically
+resubmitted while the check is showing. Each viewer may need to complete
+Webtor's own verification; the app does not bypass it.
+
+Validated with 46 tests, including nine simulated minutes of guest heartbeats,
+and full Electron UI checks covering native prompts and verification recovery.

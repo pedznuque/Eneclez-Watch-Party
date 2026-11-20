@@ -1320,7 +1320,7 @@ function waitForPlayerReady() {
                 const state=await installWebtorPage(playerWebview,'player');
                 if(playerWebview.src!==expected||playerReadyCheckTimer!==timer)return;
                 if(state?.error){setPlayerError(state.error);return;}
-                if(state?.needsInteraction){setPlayerLoading(false);setMediaStatus('Complete Webtor sign-in in the player','');}
+                if(state?.needsInteraction){setPlayerLoading(false);setMediaStatus(state.interaction==='verification'?'Webtor requires verification on this device. Complete the check in the player.':state.interaction==='provider'?'Webtor needs your response. Use the prompt in the player.':'Complete Webtor sign-in in the player','');return;}
                 if(state?.ready){clearInterval(timer);playerReadyCheckTimer=null;lastPlayerReadyUrl=expected;setPlayerLoading(false);setMediaStatus('Ready','is-online');await applyPlayerVolume(selectedVolume);}
                 else if(++checks>=240){clearInterval(timer);playerReadyCheckTimer=null;setPlayerLoading(false);setMediaStatus('Webtor is not ready. Retry or check its page.','is-offline');}
             }finally{checking=false;}
@@ -2871,7 +2871,7 @@ async function installWebtorPage(webview,role) {
         const current=webview.getURL?.()||webview.src;
         if(!isWebtorUrl(current))return null;
         const state=await webview.executeJavaScript(`(${webtorPageRuntime.toString()})(${JSON.stringify(role)})`);
-        if(role==='player'&&state?.ready)return await webview.executeJavaScript(`(${webtorControlRuntime.toString()})()`);
+        if(role==='player'&&state?.hasVideo)return await webview.executeJavaScript(`(${webtorControlRuntime.toString()})()`);
         return state;
     }catch{return null;}
 }
@@ -4783,6 +4783,12 @@ function updateHostControls() {
 
 async function readPlaybackState() {
     try {
+        if(isWebtorUrl(playerWebview.src)){
+            const state=await installWebtorPage(playerWebview,'player');
+            if(state?.needsInteraction){setPlayerLoading(false);setMediaStatus(state.interaction==='verification'?'Webtor requires verification on this device. Complete the check in the player.':state.interaction==='provider'?'Webtor needs your response. Use the prompt in the player.':'Complete Webtor sign-in in the player','');}
+            updateWebtorSubtitleUi(state);
+            return state?{provider:'webtor',currentTime:0,duration:0,paused:true,ready:false,...state}:null;
+        }
         const state = await playerWebview.executeJavaScript(`
             (() => {
                 if (window.watchPartyPlayer?.getState) {
