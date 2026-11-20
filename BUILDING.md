@@ -8,6 +8,8 @@ https://eneclez-watch-party.onrender.com
 
 The desktop app is built from the `client` folder.
 
+Webtor's native browser-to-player handoff is documented in [WEBTOR.md](WEBTOR.md).
+
 ## Run Locally
 
 ```powershell
@@ -17,6 +19,14 @@ npm.cmd start
 ```
 
 ## Torrent Playback (Local Development)
+
+The optional **Shared cloud cache** delivery mode is documented in
+[cloud/README.md](cloud/README.md). It needs a separately hosted worker and room
+server configuration. No hosting account or paid resources are provisioned by
+these local changes. On this device remains the default.
+The separate Windows Cloud Torrent/TorrServer experiment and repeatable local
+comparison are documented in [cloud/TORRENT_ENGINE_TESTS.md](cloud/TORRENT_ENGINE_TESTS.md).
+Those standalone tools do not replace the app's torrent backend.
 
 The Torrent button beside Drive accepts BitTorrent magnet links and local
 `.torrent` metadata files. Load metadata, select a video, then Play or Queue.
@@ -34,12 +44,12 @@ Seeking moves this priority window instead of waiting for old opening pieces.
 The HTTP response stays open across those windows so FFmpeg does not mistake a
 chunk boundary for the end of the movie. TCP peer connections have no configured
 download speed limit and allow up to 100 peer connections. Buffering status shows
-seconds buffered and the source's average byte rate when peers cannot keep up.
+seconds buffered before playback is ready.
 Transfer rates show KB/s or MB/s together with Mbps (megabits per second).
 Each viewer downloads independently from peers; the room shares the magnet and
 file index, never a localhost stream address. MP4/WebM with supported codecs are
 recommended. Unsupported native decoding (including HEVC 10-bit with AC3/E-AC3)
-automatically falls back to bundled FFmpeg H.264/AAC streaming, up to 720p. The
+is checked before playback and uses bundled FFmpeg H.264/AAC streaming, up to 720p. The
 converted stream is piped directly to the player, not saved as another movie.
 Compatibility mode uses CPU and may buffer longer. The Subtitles menu inside
 the video discovers embedded tracks and chooses English when available; each
@@ -53,6 +63,18 @@ Seeking restarts conversion near the requested position when
 the requested timestamp is outside the existing playback buffer.
 Play/pause intent and the requested timestamp are preserved during conversion;
 room heartbeats wait for buffering/seeking to finish before broadcasting.
+The player waits for a decoded frame and eight seconds of buffered video before
+starting or finishing a seek (less near the end of a file). An underrun pauses
+actual playback and waits for a five-second refill. Checking, Buffering, Video
+ready, and Playing indicators reflect each viewer's local decoder. Unsupported
+audio also triggers conversion even when the video codec itself is supported.
+Converted video uses MediaSource to fill while paused, with roughly 45 seconds
+ahead and 30 seconds behind retained; it does not depend on Chromium's shorter
+native paused-video preload. Native streams that suspend preload too early use
+the same conversion buffer. Audio timestamps are normalized during conversion.
+Room buffer holds preserve Play intent while freezing the shared clock; both
+the desktop app and server must contain the readiness protocol changes. The v1.0.20 desktop includes these readiness fixes; the room server must
+also run the updated readiness protocol.
 The host can grant a guest playback control through People > Allow.
 The player displays the current title, including the selected torrent filename.
 Fullscreen has a persistent Hide controls / Show controls button and a personal
@@ -107,8 +129,11 @@ blocked to exercise offline recovery; this does not verify logged-in provider
 playback. Screenshots are saved under `client/test-artifacts` (gitignored).
 `npm.cmd run test:room` opens two hidden local Electron viewers with separate
 torrent clients and checks late joining, synchronized pause/seek/resume, guest
-control permission, and visible captions on both players. The test uses a local
-room server and generated video. The test's temporary Electron cache remains in
+control permission, and visible captions on both players. It also checks delayed
+conversion startup, H.264 with E-AC3 converted to decoded AAC audio on both ends,
+bounded buffering, and forward/backward seeks that restart conversion. The UI
+test checks long chat messages and composer bounds in desktop/compact layouts.
+The tests use a local room server and generated video. Temporary Electron cache remains in
 the OS temp folder until the process releases it.
 Torrent loading now asks the room server for confirmation. If the server does
 not acknowledge the shared magnet, chat warns that local playback alone does

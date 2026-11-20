@@ -70,7 +70,12 @@ app.whenReady().then(async () => {
             .replace("<head>", "<head>" + errorsScript);
         fs.writeFileSync(roomPage, roomHtml);
         win = new BrowserWindow({ show: false, width: 1280, height: 1040, webPreferences: { preload: path.resolve(__dirname, "../preload.js"), webviewTag: true, backgroundThrottling: false } });
-        const localOnly = (details, callback) => callback({ cancel: /^https?:/.test(details.url) && !details.url.startsWith("http://127.0.0.1:") });
+        const blockedProviderRequests=[];let mockWebtor=false,liveWebtor=false;
+        const localOnly = (details, callback) => {
+            const cancel=/^https?:/.test(details.url) && !details.url.startsWith("http://127.0.0.1:") && !liveWebtor && !(mockWebtor&&new URL(details.url).origin==='https://webtor.io');
+            if(cancel)blockedProviderRequests.push({url:details.url,webContentsId:details.webContentsId});
+            callback({cancel});
+        };
         win.webContents.session.webRequest.onBeforeRequest(localOnly);
         session.fromPartition("persist:eneclez-browser").webRequest.onBeforeRequest(localOnly);
         win.webContents.on("will-navigate", (event, url) => {
@@ -91,10 +96,127 @@ app.whenReady().then(async () => {
         const joined = once(socket, "roomUsers"); socket.emit("joinRoom", { room, username: "UI Guest" }); await joined;
         await run("document.getElementById('message').value='UI chat test';document.getElementById('send').click()");
         await until(async () => await run("document.getElementById('messages').textContent.includes('UI chat test')"), "chat send and render");
-        for (const provider of ["Youtube", "Facebook", "Drive", "Torrent"]) {
+        const longMessage = "Chat wrapping test " + "X".repeat(900);
+        socket.emit("chat", { room, message: longMessage });
+        await until(async () => await run("document.getElementById('messages').textContent.includes('Chat wrapping test')"), "long guest message");
+        async function assertChatBounds(label) {
+            const bounds = await run(`(() => {
+                const panel=document.querySelector('.chat-panel'), messages=document.getElementById('messages'), send=document.querySelector('.send');
+                const p=panel.getBoundingClientRect(), s=send.getBoundingClientRect();
+                return { messagesFit:messages.scrollWidth<=messages.clientWidth+1, composerFits:s.right<=p.right+1 && s.left>=p.left-1, pageFits:document.documentElement.scrollWidth<=innerWidth+1 };
+            })()`);
+            assert.deepEqual(bounds, { messagesFit:true, composerFits:true, pageFits:true }, label);
+        }
+        await assertChatBounds("desktop chat and composer stay inside the column with long text");
+        for (const provider of ["Youtube", "Facebook", "Drive", "Webtor", "Torrent"]) {
             await run(`document.getElementById('browse${provider}').click()`);
             assert.equal(await run(`document.getElementById('browse${provider}').classList.contains('is-active')`), true);
         }
+        const webtorMovie=path.join(temp,'webtor.mp4');
+        execFileSync(require('ffmpeg-static'),['-hide_banner','-loglevel','error','-i',movie,'-map','0:v:0','-c:v','copy','-an','-movflags','+faststart','-y',webtorMovie],{windowsHide:true});
+        const webtorBytes=fs.readFileSync(webtorMovie),webtorSession=session.fromPartition('persist:eneclez-browser');
+        let streamPosts=0;const postOrigins=[];
+        await webtorSession.protocol.handle('https',async request=>{
+            const url=new URL(request.url);
+            if(url.pathname==='/en.vtt'||url.pathname==='/es.vtt')return new Response(`WEBVTT\n\n00:00:00.000 --> 00:00:29.000\n${url.pathname==='/en.vtt'?'English Webtor captions':'Spanish Webtor captions'}\n`,{headers:{'Content-Type':'text/vtt'}});
+            if(url.pathname==='/movie.mp4'){
+                const range=/bytes=(\d+)-(\d*)/.exec(request.headers.get('range')||'');
+                const start=range?Number(range[1]):0,end=range?.[2]?Math.min(webtorBytes.length-1,Number(range[2])):webtorBytes.length-1;
+                return new Response(webtorBytes.subarray(start,end+1),{status:range?206:200,headers:{'Content-Type':'video/mp4','Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end}/${webtorBytes.length}`}:{})}});
+            }
+            if(url.pathname==='/stream-video'){
+                assert.equal(request.method,'POST');streamPosts++;postOrigins.push(request.headers.get('origin'));
+                return new Response(`<div class="wt-player-stage"><div class="wt-player"><video autoplay controls data-duration="600" data-run-offset="0" data-session-seek-url="/session/seek" src="/movie.mp4"></video><div class="wt-player-controls"><div class="wt-player-progress" role="slider" aria-valuemax="600" style="height:12px;width:100%"></div><button>Native play controls</button></div></div></div>
+                    <dialog id="subtitles"><button class="subtitle" data-id="none" data-default="true">Off</button><button class="subtitle" data-id="en" data-label="English" data-provider="Sidecar">English</button><button class="subtitle" data-id="es" data-label="Spanish" data-provider="MediaProbe">Spanish</button></dialog>
+                    <script>
+                    const video=document.querySelector('video');window.nativeSeekCalls=0;
+                    document.querySelector('.wt-player-progress').addEventListener('pointerdown',()=>document.addEventListener('pointerup',event=>{
+                        const rect=document.querySelector('.wt-player-progress').getBoundingClientRect(),target=(event.clientX-rect.left)/rect.width*600;
+                        const offset=Math.floor(target/30)*30;video.dataset.runOffset=offset;video.currentTime=target-offset;window.nativeSeekCalls++;
+                    },{once:true}));
+                    document.getElementById('subtitles').addEventListener('click',event=>{
+                        const item=event.target.closest('.subtitle');if(!item)return;
+                        document.querySelectorAll('.subtitle').forEach(el=>el.dataset.default=String(el===item));
+                        Array.from(video.textTracks).forEach(track=>track.mode='disabled');if(item.dataset.id==='none')return;
+                        let track=video.querySelector('track[data-lang="'+item.dataset.id+'"]');
+                        if(!track){track=document.createElement('track');track.kind='subtitles';track.srclang=item.dataset.id;track.dataset.lang=item.dataset.id;track.src='/'+item.dataset.id+'.vtt';video.append(track);}track.track.mode='showing';
+                    });
+                    </script>`,{headers:{'Content-Type':'text/html'}});
+            }
+            return new Response('<video autoplay muted src="/movie.mp4" style="display:none"></video><div id="file" data-status-file="/Season/Episode 02.mp4"><h2>Episode 02.mp4</h2><form action="/stream-video" method="post" target="_blank"><input name="resource-id" value="'+'a'.repeat(40)+'"><input name="item-id" value="episode02"><button type="submit">Stream</button></form></div>',{headers:{'Content-Type':'text/html'}});
+        });
+        mockWebtor=true;
+        await run("setBrowserSite('webtor',{load:false});navigateBrowserTo('https://webtor.io/'+'a'.repeat(40))");
+        await until(async()=>await run("browserWebview.executeJavaScript(\"Boolean(document.querySelector('form')&&window.__watchPartyWebtorPage)\")"),'Webtor browser detector installed');
+        await run("browserWebview.executeJavaScript(\"document.querySelector('video').play()\",true)");
+        await until(async()=>await run("browserWebview.executeJavaScript(\"document.querySelector('video').videoWidth>0\")"),'hidden codec probe decoded without handoff');
+        assert.equal(await run("playerWebview.src==='about:blank'"),true,'browsing a Webtor file must not start the upper player');
+        await run("browserWebview.executeJavaScript(\"document.querySelector('button').click()\",true)");
+        await until(async()=>await run("playerPane.classList.contains('is-webtor-player') && !playerPane.classList.contains('is-loading') && playerWebview.executeJavaScript(\"document.querySelector('video')?.currentTime>.5\")"),'actual browser playback is handed to the top player');
+        assert.equal(await run("new URL(selectedVideoUrl).searchParams.get('file')==='/Season/Episode 02.mp4' && playingTitleEl.textContent==='Episode 02.mp4'"),true,'existing shared selection flow keeps the exact episode');
+        assert.equal(await run("browserWebview.executeJavaScript(\"document.querySelector('video').paused && document.querySelector('video').muted\")"),true,'lower preview is paused without duplicate audio');
+        assert.ok(streamPosts>=2);assert.ok(postOrigins.every(origin=>origin==='https://webtor.io'),'both panes use native first-party POSTs');
+        console.log('PASS real Webtor browser playback triggers the existing selection flow, exact episode plays above, and lower preview pauses');
+        const webtorPlayer=code=>run(`playerWebview.executeJavaScript(${JSON.stringify(code)})`);
+        await until(async()=>await run("lastPlaybackState?.duration===600"),'app clock uses full duration rather than the 30-second cached segment');
+        assert.equal(await webtorPlayer("getComputedStyle(document.querySelector('.wt-player-controls')).visibility"),'hidden');
+        await run("document.getElementById('playPause').click()");
+        await until(async()=>(await webtorPlayer('window.watchPartyPlayer.getState()')).paused,'app pauses Webtor');
+        const pausedAt=(await webtorPlayer('window.watchPartyPlayer.getState()')).currentTime;await sleep(200);
+        assert.ok(Math.abs((await webtorPlayer('window.watchPartyPlayer.getState()')).currentTime-pausedAt)<.1);
+        await run("playbackProgressEl.value=508;playbackProgressEl.dispatchEvent(new Event('input'));playbackProgressEl.dispatchEvent(new Event('change'))");
+        await until(async()=>{const state=await webtorPlayer('window.watchPartyPlayer.getState()');return state.paused&&!state.seeking&&Math.abs(state.currentTime-304.8)<1;},'app seeks beyond cached segment using native full-movie slider');
+        assert.equal(await webtorPlayer('window.nativeSeekCalls'),1);
+        await run("document.querySelector('.media-panel').scrollTop=0");
+        const subtitlePoint=await run("(()=>{const r=document.getElementById('webtorSubtitleToggle').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+        win.webContents.debugger.attach('1.3');
+        for(const type of ['mousePressed','mouseReleased'])await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type,...subtitlePoint,button:'left',clickCount:1});
+        await until(async()=>await run("!document.getElementById('webtorSubtitleMenu').hidden"),'real pointer opens app-owned on-screen subtitle menu');
+        const englishPoint=await run("(()=>{const r=document.querySelector('#webtorSubtitleMenu [data-subtitle-id=\"en\"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+        for(const type of ['mousePressed','mouseReleased'])await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type,...englishPoint,button:'left',clickCount:1});
+        win.webContents.debugger.detach();
+        await until(async()=>await webtorPlayer("Array.from(document.querySelector('video').textTracks).some(t=>t.mode==='showing'&&t.activeCues?.[0]?.text==='English Webtor captions')"),'app subtitle selection loads real cues through provider handler');
+        await run("document.getElementById('webtorSubtitleToggle').click()");
+        await run("document.querySelector('#webtorSubtitleMenu [data-subtitle-id=\"none\"]').click()");
+        await until(async()=>await webtorPlayer("Array.from(document.querySelector('video').textTracks).every(t=>t.mode==='disabled')"),'app turns subtitles Off');
+        await run("document.getElementById('playPause').click();volumeControlEl.value=40;volumeControlEl.dispatchEvent(new Event('input'))");
+        await until(async()=>await webtorPlayer("!document.querySelector('video').paused&&document.querySelector('video').volume===.4"),'app resumes Webtor and controls volume');
+        console.log('PASS app Webtor pause/resume, full duration, native transcoder seek beyond cached segment, real subtitle clicks/cues/Off and volume; duplicate provider bar hidden');
+        await run("document.getElementById('stopPlayer').click()");
+        await until(async()=>await run("playerWebview.src==='about:blank'"),'Webtor stop');
+        await webtorSession.protocol.unhandle('https');mockWebtor=false;
+        if(process.argv.includes('--live-webtor')){
+            liveWebtor=true;
+            await run("setBrowserSite('webtor',{load:false});navigateBrowserTo('https://webtor.io/08ada5a7a6183aae1e09d831df6748d566095a10')");
+            await until(async()=>await run("browserWebview.executeJavaScript(\"Boolean(window.__watchPartyWebtorPage&&Array.from(document.forms).find(f=>new URL(f.action).pathname==='/stream-video'))\")"),'live Webtor Stream form',45000);
+            await run("browserWebview.executeJavaScript(\"Array.from(document.forms).find(f=>new URL(f.action).pathname==='/stream-video').querySelector('button').click()\",true)");
+            await until(async()=>await run("isWebtorVideoUrl(playerWebview.src) && !playerPane.classList.contains('is-loading') && playerWebview.executeJavaScript(\"(()=>{const v=document.querySelector('.wt-player video,video.player'),r=v?.getBoundingClientRect();return v?.currentTime>.5&&v.videoWidth>0&&r.width>100&&r.height>100&&!!v.closest('.watch-party-webtor-target')})()\")"),'live browser playback handed to upper media player',90000);
+            const liveResult=await run("({file:new URL(selectedVideoUrl).searchParams.get('file'),title:playingTitleEl.textContent})");
+            assert.equal(liveResult.file,'/Sintel/Sintel.mp4');
+            await until(async()=>await run("lastPlaybackState?.duration>880"),'live app clock uses full Sintel duration');
+            assert.equal(await webtorPlayer("getComputedStyle(document.querySelector('.wt-player-controls')).visibility"),'hidden');
+            await run("document.getElementById('playPause').click()");
+            await until(async()=>(await webtorPlayer('window.watchPartyPlayer.getState()')).paused,'live app pause');
+            await run("playbackProgressEl.value=51;playbackProgressEl.dispatchEvent(new Event('input'));playbackProgressEl.dispatchEvent(new Event('change'))");
+            await until(async()=>{const state=await webtorPlayer('window.watchPartyPlayer.getState()');return !state.seeking&&state.ready&&state.paused&&Math.abs(state.currentTime-state.duration*.051)<2;},'live native full-movie seek from app',60000);
+            await run("document.getElementById('webtorSubtitleToggle').click()");
+            const liveSubtitle=await webtorPlayer("window.watchPartyPlayer.getState().subtitles.find(s=>/^English/i.test(s.label)&&!s.disabled)");
+            assert.ok(liveSubtitle,'live provider English subtitles are listed by app');
+            await run(`Array.from(document.querySelectorAll('#webtorSubtitleMenu [data-subtitle-id]')).find(button=>button.dataset.subtitleId===${JSON.stringify(liveSubtitle.id)}).click()`);
+            await until(async()=>await webtorPlayer("Array.from(document.querySelector('.wt-player video').textTracks).some(track=>track.cues?.length>0)"),'live subtitle cues loaded',30000);
+            await run("document.getElementById('playPause').click()");
+            await until(async()=>{const state=await webtorPlayer('window.watchPartyPlayer.getState()');return !state.paused&&!state.requestedPaused&&state.currentTime>state.duration*.051+.3&&await run('lastPlaybackPausedState===false');},'live app resume advances and app icon follows',45000);
+            console.log('PASS LIVE app controls full duration, pause/seek/resume and provider English subtitle loading; native duplicate bar hidden');
+            await sleep(1500);
+            assert.equal(await run("!playerPane.classList.contains('is-loading') && document.getElementById('playerLoadingState').hidden"),true,'provider subframe loads cannot cover an already-playing movie with the loading overlay');
+            assert.equal(await run("browserWebview.executeJavaScript(\"document.querySelector('video').paused\")"),true);
+            console.log('PASS LIVE actual Webtor browser playback handed the exact Sintel file to the upper player',JSON.stringify(liveResult));
+            fs.mkdirSync(path.resolve(__dirname,'../test-artifacts'),{recursive:true});
+            fs.writeFileSync(path.resolve(__dirname,'../test-artifacts/webtor-native-flow.png'),(await win.webContents.capturePage()).toPNG());
+            await run("document.getElementById('stopPlayer').click()");liveWebtor=false;
+        }
+        await run("document.querySelector('.media-panel').scrollTop=0");
+        await run("document.getElementById('browseTorrent').click()");
         await run(`document.getElementById('torrentMagnet').value=${JSON.stringify(torrent.magnetURI)}; document.getElementById('loadTorrent').click()`);
         await until(async () => await run("document.getElementById('torrentFile').options.length===2 && !document.getElementById('playTorrent').disabled"), "torrent file list and host controls");
         await run("document.getElementById('torrentSearch').value='Ocean';document.getElementById('torrentSearch').dispatchEvent(new Event('input'))");
@@ -103,13 +225,15 @@ app.whenReady().then(async () => {
         await until(async () => await run("queueItems.length===1"), "queue add");
         console.log("PASS chat, provider tabs, torrent loading/search, and queue add");
         await run("document.getElementById('playTorrent').click()");
+        assert.equal(await run("playerWebview.partition==='persist:eneclez-browser'"),true,"other providers restore their original player session");
         await until(async () => await run("playerPane.classList.contains('is-torrent-player') && getComputedStyle(playerWebview).pointerEvents==='auto'"), "torrent webview accepts clicks");
         const guestContents = webContents.fromId(await run("playerWebview.getWebContentsId()"));
         const player = code => guestContents.executeJavaScript(code);
         await until(async () => await player("window.watchPartyPlayer?.getState().ready && document.getElementById('subtitleSelect').options.length===3"), "embedded subtitle menu ready");
+        await until(async () => await run("!document.getElementById('playbackReadiness').hidden && /Playing|Video ready/.test(document.getElementById('playbackReadiness').textContent)"), "parent readiness indicator follows actual decoded playback");
         await run("document.getElementById('playPause').click()");
         await until(async () => (await player("window.watchPartyPlayer.getState()")).paused, "pause before pointer test");
-        await run("document.activeElement?.blur(); playerWebview.scrollIntoView({block:'center'})");
+        await run("document.activeElement?.blur();document.querySelector('.media-panel').scrollTop=0;playerPane.scrollIntoView({block:'start'})");
         await sleep(200);
         const pane = await run("(()=>{const r=playerWebview.getBoundingClientRect();return {x:r.x,y:r.y}})()");
         const select = await player("(()=>{const r=document.getElementById('subtitleSelect').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
@@ -135,6 +259,7 @@ app.whenReady().then(async () => {
         assert.equal(await run("document.getElementById('playingTitle').textContent"), "Episode 01 - Ocean.mkv");
         await win.webContents.executeJavaScript("playerStage.requestFullscreen()", true);
         await until(async () => await run("document.fullscreenElement===playerStage && !document.getElementById('fullscreenControlsToggle').hidden"), "fullscreen controls available");
+        assert.equal(await run("document.getElementById('fullscreenMessages').scrollWidth<=document.getElementById('fullscreenMessages').clientWidth+1"), true, "long fullscreen chat messages wrap");
         await run("document.getElementById('fullscreenControlsToggle').click()");
         await until(async () => await run("playerStage.classList.contains('is-fullscreen-controls-idle') && playerControls.inert"), "fullscreen manual hide");
         await player("document.dispatchEvent(new PointerEvent('pointermove',{bubbles:true}))");
@@ -159,6 +284,7 @@ app.whenReady().then(async () => {
         const artifacts = path.resolve(__dirname, "../test-artifacts"); fs.mkdirSync(artifacts, { recursive: true });
         await sleep(300); fs.writeFileSync(path.join(artifacts, "torrent-ui-desktop.png"), (await win.webContents.capturePage()).toPNG());
         win.setSize(760, 1000); await sleep(300);
+        await assertChatBounds("compact chat and composer stay inside their panel");
         await run("document.querySelector('.chat-panel').style.transition='none';document.getElementById('compactChatClose').click();browserPane.scrollIntoView({block:'start'})");
         await until(async () => await run("getComputedStyle(document.querySelector('.chat-panel')).opacity==='0'"), "compact chat closes without covering torrent controls");
         assert.equal(await run("document.getElementById('torrentPanel').getBoundingClientRect().height > 400 && browserPane.clientHeight >= document.getElementById('torrentPanel').offsetHeight"), true, "compact resizing must keep the active torrent browser visible");
@@ -168,6 +294,13 @@ app.whenReady().then(async () => {
         await run("document.getElementById('stopPlayer').click()");
         await until(async () => await run("playerWebview.src==='about:blank' && !playerPane.classList.contains('is-torrent-player') && document.getElementById('playPause').disabled && document.getElementById('nowPlaying').hidden"), "stop resets player, title and controls");
         console.log("PASS responsive torrent UI, no renderer exceptions, and stop/reset");
+        await run("document.getElementById('torrentDelivery').value='cloud';document.getElementById('torrentDelivery').dispatchEvent(new Event('change'))");
+        await until(async()=>await run("document.getElementById('torrentDeliveryHint').textContent.includes('One cloud cache')"),"cloud delivery selection");
+        assert.equal(await run("document.getElementById('chooseTorrentFile').disabled"),true);
+        await run(`document.getElementById('torrentMagnet').value=${JSON.stringify(torrent.magnetURI)};document.getElementById('loadTorrent').click()`);
+        await until(async()=>await run("document.getElementById('torrentStatus').textContent.includes('Cloud cache is not configured') && !document.getElementById('loadTorrent').disabled"),"unconfigured cloud gives an actionable message and recovers controls");
+        assert.deepEqual(await run("window.__appErrors"),[]);
+        console.log("PASS cloud mode selection, magnet-only loading, room-server configuration error, and recovered controls");
     } catch (error) { console.error(error.stack); process.exitCode = 1; }
     finally {
         for (const socket of clients) socket.disconnect();

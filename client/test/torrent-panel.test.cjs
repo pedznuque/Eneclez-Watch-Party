@@ -12,6 +12,8 @@ function fixture(api = {}) {
     const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
     const context = { document: { getElementById: get, createElement: () => new Element() }, window: { watchParty: { prepareTorrent: async () => metadata, stopTorrent: async () => {}, ...api }, addEventListener() {} },
         canControlPlayer: () => true, setBrowserSite() {}, parseTorrentLink, formatTorrentSpeed, URL, setInterval() {}, clearInterval() {}, openPlayerFromUrl() {}, addQueueFromUrl() {} };
+    context.prepareTorrentSource = request => context.window.watchParty.prepareTorrent(request);
+    context.readTorrentSourceStatus = () => context.window.watchParty.torrentStatus();
     vm.createContext(context); vm.runInContext(fs.readFileSync(path.join(__dirname, "../src/js/torrent-panel.js"), "utf8"), context);
     return { context, get };
 }
@@ -26,6 +28,18 @@ test("progress belongs to the selected video and permissions update without relo
     context.canControlPlayer = () => false; context.refreshTorrentControls();
     assert.equal(get("playTorrent").disabled, true); assert.equal(get("queueTorrent").disabled, false);
     context.canControlPlayer = () => true; context.refreshTorrentControls(); assert.equal(get("playTorrent").disabled, false);
+});
+
+test("cloud selection is shared in the magnet and disconnect cannot stop friends' cache", async () => {
+    let stopped = 0;
+    const { context, get } = fixture({ stopTorrent:async () => { stopped++; } });
+    context.displayTorrent({ ...metadata, cloud:true });
+    assert.equal(parseTorrentLink(context.selectedTorrentLink()).cloud, true);
+    get("torrentDelivery").value = "cloud"; context.refreshTorrentControls();
+    assert.equal(get("chooseTorrentFile").disabled, true);
+    await get("stopTorrent").onclick();
+    assert.equal(stopped, 0);
+    assert.match(get("torrentStatus").textContent, /Shared playback/);
 });
 test("stopping during metadata loading ignores its stale completion", async () => {
     let finish;

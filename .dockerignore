@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+**/node_modules
+**/dist
+backups
+mobile
+updates
+server/cloud-data
+client/test-artifacts
+client/.tmp-*
+client/src/.tmp-*

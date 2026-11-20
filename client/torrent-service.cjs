@@ -9,6 +9,12 @@ const { parseTorrentLink } = require("./src/js/torrent-links");
 const STREAM_CHUNK_SIZE = 4 * 1024 * 1024;
 const MiB = 1024 * 1024;
 
+function needsCompatibility(videoCodec, audioCodec, description = "") {
+    return !["h264", "vp8", "vp9", "av1", "theora"].includes(videoCodec) ||
+        !["none", "aac", "mp3", "opus", "vorbis"].includes(audioCodec) ||
+        /(?:yuv|gbr|gray)\w*(?:10|12|16)(?:le|be)\b/i.test(description);
+}
+
 function subtitleStreams(log) {
     return log.split(/(?=^\s*Stream #0:)/m).flatMap(block => {
         const match = block.match(/^\s*Stream #0:(\d+)(?:\[[^\]]+\])?(?:\(([^)]+)\))?: Subtitle: ([\w]+)/m);
@@ -87,7 +93,7 @@ class TorrentService {
         if (!torrent) throw new Error("No torrent loaded");
         return {
             name: torrent.name, hash: torrent.infoHash, magnet: torrent.magnetURI,
-            files: torrent.files.map((file, index) => ({ index, name: file.name, length: file.length, downloaded: file.downloaded })).filter(file => /\.(mp4|webm|mkv|m4v|mov|ogv)$/i.test(file.name)),
+            files: torrent.files.map((file, index) => ({ index, name: file.name, length: file.length, downloaded: file.done ? file.length : file.downloaded })).filter(file => /\.(mp4|webm|mkv|m4v|mov|ogv)$/i.test(file.name)),
             progress: torrent.progress, peers: torrent.numPeers, downloadSpeed: torrent.downloadSpeed, uploadSpeed: torrent.uploadSpeed, error: this.error,
             preferredFileIndex: this.preferredFileIndex, conversionError: this.conversionError
         };
@@ -205,7 +211,7 @@ class TorrentService {
             const process = spawn(ffmpegPath, ["-hide_banner", "-nostdin", "-analyzeduration", "2000000", "-probesize", "4194304", "-i", input, "-map", "0:v:0", "-t", "0", "-f", "null", "-"], { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
             this.converters.add(process);
             let log = "";
-            const timeout = setTimeout(() => { process.kill(); reject(new Error("Video inspection timed out. Check available torrent peers.")); }, 30000);
+            const timeout = setTimeout(() => { process.kill(); reject(new Error("Video inspection timed out. Check available torrent peers.")); }, 90000);
             process.stderr.on("data", chunk => { log = (log + chunk.toString()).slice(-65536); });
             process.on("error", () => reject(new Error("Compatibility converter is unavailable. Reinstall the updated desktop app.")));
             process.on("close", () => {
@@ -214,10 +220,11 @@ class TorrentService {
                 const time = log.match(/Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/);
                 const videoCodec = log.match(/Video: ([\w]+)/)?.[1] || "unknown";
                 const audioCodec = log.match(/Audio: ([\w]+)/)?.[1] || "none";
+                const videoDescription = log.match(/Video: [^\r\n]+/)?.[0] || "";
                 if (!time) { reject(new Error("Could not read video metadata. The torrent may still be missing header pieces.")); return; }
                 const duration = Number(time[1]) * 3600 + Number(time[2]) * 60 + Number(time[3]);
                 if (this.current === torrent) this.fileDurations.set(torrent.files[fileIndex], duration);
-                resolve({ duration, videoCodec, audioCodec, subtitles: subtitleStreams(log) });
+                resolve({ duration, videoCodec, audioCodec, hasAudio: audioCodec !== "none", requiresCompatibility: needsCompatibility(videoCodec, audioCodec, videoDescription), subtitles: subtitleStreams(log) });
             });
         });
         this.mediaInfo.set(key, task);
@@ -238,6 +245,7 @@ class TorrentService {
             const filter = args.indexOf("-vf");
             args.splice(filter, 2, "-filter_complex", `[0:v:0][0:${subtitle}]overlay=eof_action=pass:shortest=0,scale=w='min(1280,iw)':h=-2[captioned]`);
         }
+        args.splice(args.indexOf("-c:a"), 0, "-af", "aresample=async=1:first_pts=0");
         const process = spawn(ffmpegPath, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
         this.converters.add(process);
         let canceled = false;
@@ -344,4 +352,4 @@ class TorrentService {
     }
 }
 
-module.exports = { TorrentService, parseRange, startupRanges, readAheadBytes, subtitleStreams };
+module.exports = { TorrentService, parseRange, startupRanges, readAheadBytes, subtitleStreams, needsCompatibility };

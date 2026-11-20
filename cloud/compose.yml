@@ -1,0 +1,18 @@
+services:
+  cache:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    environment:
+      CLOUD_CACHE_KEY: ${CLOUD_CACHE_KEY:?Set a random secret of at least 32 characters}
+      CLOUD_CACHE_PUBLIC_URL: ${CLOUD_CACHE_PUBLIC_URL:?Set the public HTTPS origin}
+      CLOUD_CACHE_MAX_GB: ${CLOUD_CACHE_MAX_GB:-30}
+      CLOUD_CACHE_MAX_TORRENTS: ${CLOUD_CACHE_MAX_TORRENTS:-3}
+      CLOUD_CACHE_IDLE_MINUTES: ${CLOUD_CACHE_IDLE_MINUTES:-60}
+    volumes:
+      - torrent-cache:/cache
+volumes:
+  torrent-cache:

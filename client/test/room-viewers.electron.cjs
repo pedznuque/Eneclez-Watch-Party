@@ -25,8 +25,8 @@ const viewers = [], failures = [];
 app.whenReady().then(async () => {
     try {
         const srt = path.join(temp, "captions.srt"), movie = path.join(temp, "shared.mkv");
-        fs.writeFileSync(srt, "1\n00:00:01,000 --> 00:00:29,000\nShared captions\n\n");
-        execFileSync(require("ffmpeg-static"), ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24", "-i", srt, "-t", "30", "-map", "0:v:0", "-map", "1:0", "-c:v", "libx264", "-preset", "ultrafast", "-c:s", "srt", "-metadata:s:s:0", "language=eng", "-y", movie], { windowsHide: true });
+        fs.writeFileSync(srt, "1\n00:00:01,000 --> 00:01:29,000\nShared captions\n\n");
+        execFileSync(require("ffmpeg-static"), ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-i", srt, "-t", "90", "-map", "0:v:0", "-map", "1:a:0", "-map", "2:0", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "eac3", "-c:s", "srt", "-metadata:s:s:0", "language=eng", "-y", movie], { windowsHide: true });
         const serverDir = path.resolve(__dirname, "../../server");
         server = new Function("require", "__dirname", "process", fs.readFileSync(path.join(serverDir, "server.js"), "utf8") + "\nreturn server;")(
             createRequire(path.join(serverDir, "server.js")), serverDir, { env: { ...process.env, PORT: "0" } });
@@ -42,6 +42,13 @@ app.whenReady().then(async () => {
         const applySource = roomSource.slice(roomSource.indexOf("async function applyPlaybackState("), roomSource.indexOf("async function emitHostPlaybackState("));
         async function makeViewer(username, delay = 0) {
             const viewer = { username, service: new TorrentService(path.join(temp, username), options), loaded: false, lastState: null };
+            const transcode = viewer.service.transcode.bind(viewer.service);
+            viewer.conversions = 0;
+            viewer.service.transcode = (...args) => {
+                viewer.conversions++;
+                if (viewer.conversions === 1) setTimeout(() => { if (!args[2].destroyed) transcode(...args); }, 3500);
+                else transcode(...args);
+            };
             viewers.push(viewer);
             viewer.window = new BrowserWindow({ show: false, webPreferences: { offscreen: true, backgroundThrottling: false } });
             viewer.context = { username, applyingRemotePlayback: false, Date, performance: { now: () => Date.now() },
@@ -65,9 +72,13 @@ app.whenReady().then(async () => {
                     const url = viewer.service.player(parsed.fileIndex);
                     viewer.playerUrl = url;
                     await viewer.window.loadURL(url);
-                    await until(async () => (await viewer.read())?.ready, `${username} playback ready`);
                     viewer.loaded = true;
                     if (viewer.lastState) await viewer.context.applyPlaybackState(viewer.lastState);
+                    await until(async () => {
+                        const state = await viewer.read();
+                        if (state?.buffering) assert.equal(state.paused, true, "a slow startup must hold playback instead of running a black-screen clock");
+                        return state?.ready;
+                    }, `${username} playback ready`);
                 })().catch(error => failures.push(error));
             });
             await once(viewer.socket, "connect");
@@ -82,12 +93,19 @@ app.whenReady().then(async () => {
         await until(async () => host.loaded && (await host.read()).currentTime > 1, "host playback");
         heartbeat = setInterval(async () => {
             try {
-                if (!host.loaded || host.context.applyingRemotePlayback) return;
-                const state = await host.read();
-                if (!state?.ready || state.seeking || state.buffering || host.context.applyingRemotePlayback) return;
-                host.socket.emit("mediaControl", { room: "two-viewer-test", ...state });
+                for (const viewer of viewers) {
+                    if (!viewer.loaded || viewer.context.applyingRemotePlayback) continue;
+                    const state = await viewer.read();
+                    if (!state || state.waitingForRoom) continue;
+                    const changed = viewer === host && (state.paused !== viewer.lastState?.paused || state.buffering !== Boolean(viewer.lastState?.buffering));
+                    const periodic = viewer === host && state.ready && !state.seeking && Date.now() - (viewer.lastSent || 0) > 3000;
+                    if (changed || periodic || (viewer.pendingControl && state.ready)) {
+                        viewer.socket.emit("mediaControl", { room: "two-viewer-test", ...state });
+                        viewer.lastSent = Date.now(); if (state.ready) viewer.pendingControl = false;
+                    }
+                }
             } catch (error) { failures.push(error); }
-        }, 3000);
+        }, 500);
         const guest = await makeViewer("guest", 1500);
         await until(async () => guest.loaded && (await guest.read()).currentTime > 1, "late guest playback");
         assert.notEqual(host.playerUrl, guest.playerUrl, "each viewer requires an independent local service");
@@ -96,9 +114,14 @@ app.whenReady().then(async () => {
             return a.ready && b.ready && Math.abs(a.currentTime - b.currentTime) < 1.5;
         }, "late join synchronized");
         await until(async () => (await Promise.all(viewers.map(viewer => viewer.window.webContents.executeJavaScript("document.getElementById('subtitleText').textContent")))).every(text => text.includes("Shared captions")), "captions visible on both viewers");
-        console.log("PASS independent local torrent services, delayed metadata exchange, late join, and visible captions on both viewers");
+        for (const viewer of viewers) {
+            assert.equal(viewer.conversions, 1, "room heartbeats must not restart delayed compatibility playback");
+            assert.ok(await viewer.window.webContents.executeJavaScript("document.getElementById('video').webkitAudioDecodedByteCount > 0"), "both viewers must decode converted audio");
+        }
+        console.log("PASS delayed startup buffers with the clock paused; both viewers decode video and EAC3-to-AAC audio without heartbeat restart; late join and captions synchronize");
         async function control(viewer, expression) {
             await viewer.window.webContents.executeJavaScript(expression);
+            viewer.pendingControl = true;
             viewer.socket.emit("mediaControl", { room: "two-viewer-test", ...await viewer.read() });
         }
         await control(host, "window.watchPartyPlayer.setPaused(true)");
@@ -117,8 +140,30 @@ app.whenReady().then(async () => {
         await control(guest, "window.watchPartyPlayer.seekTo(18, false)");
         await until(async () => { const state = await host.read(); return state.paused && Math.abs(state.currentTime - 18) < 0.3; }, "host follows granted guest");
         console.log("PASS authorized guest control synchronizes back to the host");
+        await until(async () => (await host.read()).ready && (await guest.read()).ready, "paused seek buffers finish");
+        assert.ok((await host.read()).bufferedSeconds <= 55, "the conversion buffer must stay bounded for long movies");
+        await control(host, "window.watchPartyPlayer.seekTo(75, false)");
+        await until(async () => {
+            const states = await Promise.all(viewers.map(viewer => viewer.read()));
+            return states.every(state => state.ready && state.paused && Math.abs(state.currentTime - 75) < .3);
+        }, "a seek outside the buffered window rebuilds both streams");
+        await control(host, "window.watchPartyPlayer.setPaused(false)");
+        await until(async () => (await guest.read()).currentTime > 75.5 && !(await guest.read()).paused, "converted stream resumes at the new offset");
+        await control(host, "window.watchPartyPlayer.seekTo(3, true)");
+        await until(async () => {
+            const states = await Promise.all(viewers.map(viewer => viewer.read()));
+            return states.every(state => state.ready && !state.paused && state.currentTime > 3.3 && state.currentTime < 8);
+        }, "backward seek rebuilds and resumes both streams");
+        for (const viewer of viewers) assert.ok(await viewer.window.webContents.executeJavaScript("document.getElementById('video').webkitAudioDecodedByteCount > 0"), "audio must still decode after restarting the stream");
+        console.log("PASS bounded conversion buffer, forward seek beyond cached video, backward seek, and decoded audio after restart");
         assert.equal(failures.length, 0, failures.map(error => error.stack).join("\n"));
-    } catch (error) { console.error(error.stack); process.exitCode = 1; }
+    } catch (error) {
+        console.error(error.stack);
+        for (const viewer of viewers) {
+            console.error(viewer.username, JSON.stringify(await viewer.window.webContents.executeJavaScript(`(() => { const v=document.getElementById('video'); return {state:window.watchPartyPlayer?.getState(), readyState:v?.readyState, networkState:v?.networkState, error:v?.error?.message, source:v?.src, ranges:v?Array.from({length:v.buffered.length},(_,i)=>[v.buffered.start(i),v.buffered.end(i)]):[], status:document.getElementById('status')?.textContent}; })()`).catch(() => null)), failures.map(e=>e.stack));
+        }
+        process.exitCode = 1;
+    }
     finally {
         clearInterval(heartbeat);
         for (const viewer of viewers) { viewer.socket?.disconnect(); viewer.window?.destroy(); await viewer.service.destroy(); }

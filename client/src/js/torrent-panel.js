@@ -23,7 +23,10 @@ function torrentMessage(message, state = "idle", badge = "Not connected") {
 function refreshTorrentControls() {
     const hasFile = Boolean(loadedTorrent && !torrentFile.disabled && torrentFile.value !== "");
     torrentUi.loadTorrent.disabled = torrentBusy || torrentStopping;
-    torrentUi.chooseTorrentFile.disabled = torrentBusy || torrentStopping;
+    torrentUi.chooseTorrentFile.disabled = torrentBusy || torrentStopping || document.getElementById("torrentDelivery")?.value === "cloud";
+    const delivery = document.getElementById("torrentDelivery");
+    if (delivery) delivery.disabled = torrentBusy || torrentStopping || torrentSelectionBusy;
+    torrentUi.stopTorrent.textContent = loadedTorrent?.cloud ? "Disconnect cloud" : "Stop transfer";
     torrentUi.stopTorrent.disabled = torrentStopping || (!loadedTorrent && !torrentBusy);
     torrentUi.playTorrent.disabled = !hasFile || torrentBusy || torrentSelectionBusy || !canControlPlayer();
     torrentUi.queueTorrent.disabled = !hasFile || torrentBusy || torrentSelectionBusy;
@@ -75,6 +78,8 @@ function displayTorrent(result) {
     loadedTorrent = result?.ok ? result : null;
     torrentSelectedIndex = loadedTorrent?.preferredFileIndex ?? loadedTorrent?.files?.[0]?.index ?? null;
     torrentUi.torrentSearch.value = "";
+    const delivery = document.getElementById("torrentDelivery");
+    if (loadedTorrent && delivery) delivery.value = loadedTorrent.cloud ? "cloud" : "local";
     renderTorrentFiles();
     torrentMessage(loadedTorrent?.files?.length ? "Choose a video below, then play it with your room." : result?.error || "No supported videos found in this torrent.", loadedTorrent?.files?.length ? "ready" : "error", loadedTorrent?.files?.length ? "Ready to stream" : "Not connected");
 }
@@ -91,7 +96,8 @@ async function prepareTorrentPanel(pickFile) {
         if (!window.watchParty?.prepareTorrent) throw new Error("Torrent streaming requires the updated desktop app.");
         const magnet = document.getElementById("torrentMagnet").value.trim();
         if (!pickFile && !parseTorrentLink(magnet)) throw new Error("Paste a valid BitTorrent magnet link.");
-        const result = pickFile ? await window.watchParty.chooseTorrentFile() : await window.watchParty.prepareTorrent({ magnet });
+        const cloud = document.getElementById("torrentDelivery")?.value === "cloud";
+        const result = pickFile ? await window.watchParty.chooseTorrentFile() : await prepareTorrentSource({ magnet, cloud });
         if (version !== torrentRequestVersion) return;
         if (result?.canceled) {
             torrentMessage(loadedTorrent ? "Your previous video list is still available." : "No torrent selected.", loadedTorrent ? "ready" : "idle", loadedTorrent ? "Ready to stream" : "Not connected");
@@ -106,6 +112,7 @@ function selectedTorrentLink() {
     if (!loadedTorrent || torrentFile.disabled || torrentBusy || torrentSelectionBusy) return "";
     const url = new URL(loadedTorrent.magnet);
     url.searchParams.set("wpFile", torrentFile.value);
+    if (loadedTorrent.cloud) url.searchParams.set("wpCloud", "1");
     if (!parseTorrentLink(url.href)) { torrentMessage("This magnet is too long to share in a room.", "error", "Needs attention"); return ""; }
     return url.href;
 }
@@ -119,7 +126,7 @@ async function prepareTorrentSelection() {
     torrentMessage("Preparing the selected video’s opening pieces…", "loading", "Preparing video");
     refreshTorrentControls();
     try {
-        const result = await window.watchParty.prepareTorrent({ magnet: loadedTorrent.magnet, fileIndex: torrentSelectedIndex });
+        const result = await prepareTorrentSource({ magnet: loadedTorrent.magnet, fileIndex: torrentSelectedIndex, cloud:loadedTorrent.cloud });
         if (version !== torrentSelectionVersion || requestVersion !== torrentRequestVersion) return;
         if (!result?.ok) throw new Error(result?.error || "Could not prepare this video.");
         loadedTorrent = result;
@@ -132,6 +139,17 @@ async function prepareTorrentSelection() {
 document.getElementById("browseTorrent").onclick = () => { setBrowserSite("torrent"); refreshTorrentControls(); };
 document.getElementById("torrentForm").onsubmit = event => { event.preventDefault(); prepareTorrentPanel(false); };
 torrentUi.chooseTorrentFile.onclick = () => prepareTorrentPanel(true);
+
+document.getElementById("torrentDelivery")?.addEventListener("change", async () => {
+    ++torrentRequestVersion; ++torrentSelectionVersion;
+    const wasLocal = loadedTorrent && !loadedTorrent.cloud;
+    loadedTorrent = null; renderTorrentFiles();
+    if (wasLocal && !isTorrentPlayerUrl(playerWebview.src)) await window.watchParty.stopTorrent().catch(() => {});
+    const cloud = document.getElementById("torrentDelivery").value === "cloud";
+    document.getElementById("torrentDeliveryHint").textContent = cloud ? "One cloud cache serves the room. Requires a configured cloud worker; the first download still needs peers. Use a magnet link." : "Each viewer downloads from peers on their own device.";
+    torrentMessage(cloud ? "Find videos to connect through your room server's cloud cache." : "Paste a magnet link or open a .torrent file.");
+    refreshTorrentControls();
+});
 torrentFile.onchange = prepareTorrentSelection;
 torrentUi.torrentSearch.addEventListener("input", () => {
     const previous = torrentSelectedIndex;
@@ -143,13 +161,14 @@ torrentUi.queueTorrent.onclick = () => { const url = selectedTorrentLink(); if (
 torrentUi.stopTorrent.onclick = async () => {
     if (torrentStopping) return;
     ++torrentRequestVersion; ++torrentSelectionVersion;
+    const wasCloud = loadedTorrent?.cloud || document.getElementById("torrentDelivery")?.value === "cloud";
     torrentStopping = true;
     torrentBusy = false; torrentSelectionBusy = false; loadedTorrent = null;
     renderTorrentFiles();
     torrentMessage("Stopping this device’s transfer…", "loading", "Stopping");
     try {
-        await window.watchParty?.stopTorrent();
-        torrentMessage("Transfer stopped. Cached pieces are kept; use Retry in the player to rejoin playback.", "idle", "Stopped");
+        if (!wasCloud) await window.watchParty?.stopTorrent();
+        torrentMessage(wasCloud ? "Cloud panel disconnected. Shared playback and cached pieces remain available to the room." : "Transfer stopped. Cached pieces are kept; use Retry in the player to rejoin playback.", "idle", "Stopped");
     } catch (error) { torrentMessage(error.message, "error", "Could not stop"); }
     finally { torrentStopping = false; refreshTorrentControls(); }
 };
@@ -158,7 +177,7 @@ const torrentPollTimer = setInterval(async () => {
     const version = torrentRequestVersion;
     torrentPollBusy = true;
     try {
-        const status = await window.watchParty.torrentStatus();
+        const status = await readTorrentSourceStatus(loadedTorrent);
         if (version !== torrentRequestVersion) return;
         if (!status.ok) { displayTorrent({ error: "Transfer stopped. Load a torrent to reconnect." }); return; }
         if (status.hash !== loadedTorrent?.hash) return;

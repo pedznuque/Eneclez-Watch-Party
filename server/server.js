@@ -3,6 +3,9 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
+const { cloudConfigured, prepareCloudTorrent } = require("./cloud-client.cjs");
+const { parseTorrentLink } = require("../client/src/js/torrent-links");
+const { isWebtorVideoUrl } = require('../client/src/js/webtor-provider');
 
 function loadLocalEnv() {
     const envPath = path.join(__dirname, "..", ".env");
@@ -42,7 +45,7 @@ const io = new Server(server, {
 });
 
 const rooms = {};
-const SERVER_CAPABILITIES = { protocolVersion: 2, features: { torrents: true, mediaLoadAcknowledgement: true } };
+const SERVER_CAPABILITIES = { protocolVersion: 2, features: { torrents: true, webtor: true, mediaLoadAcknowledgement: true, cloudTorrents: cloudConfigured(process.env) } };
 let driveTokens = GOOGLE_DRIVE_REFRESH_TOKEN
     ? {
         refresh_token: GOOGLE_DRIVE_REFRESH_TOKEN,
@@ -394,7 +397,7 @@ function isGoogleDriveUrl(url) {
 
 function isSupportedMediaUrl(url) {
     if (isTorrentVideoUrl(url)) return true;
-    return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url);
+    return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url) || isWebtorVideoUrl(url);
 }
 
 function isTorrentVideoUrl(value) {
@@ -477,6 +480,8 @@ function createPlaybackState(data, username) {
         currentTime: safeDuration > 0 ? Math.min(safeDuration, safeCurrentTime) : safeCurrentTime,
         duration: safeDuration,
         paused,
+        requestedPaused: typeof data.requestedPaused === "boolean" ? data.requestedPaused : paused,
+        buffering: Boolean(data.buffering),
         quality: cleanText(data.quality, "auto", 20),
         syncedAt: now,
         playStartedAt: paused ? null : now - (safeCurrentTime * 1000),
@@ -547,6 +552,20 @@ function leaveCurrentRoom(socket) {
 }
 
 io.on("connection", socket => {
+    let cloudPreparing = false;
+    socket.on("prepareCloudTorrent", async (data = {}, reply) => {
+        if (typeof reply !== "function") return;
+        const room = cleanText(data.room), magnet = cleanUrl(data.magnet);
+        const requested = parseTorrentLink(magnet);
+        const shared = parseTorrentLink(rooms[room]?.currentMedia?.url);
+        const watchingShared = shared?.cloud && requested?.cloud && requested.hash === shared.hash && (shared.fileIndex === null || (data.fileIndex ?? requested.fileIndex) === shared.fileIndex);
+        if (!isRoomMember(room, socket) || (!canControlRoom(room, socket) && !watchingShared)) return reply({ ok:false, error:"Only the host or an allowed controller can load a new cloud torrent." });
+        if (cloudPreparing) return reply({ ok:false, error:"A cloud request is already loading. Wait for it to finish." });
+        cloudPreparing = true;
+        try { reply(await prepareCloudTorrent(process.env, { magnet, fileIndex:data.fileIndex })); }
+        catch (error) { reply({ ok:false, error:error.name === "TimeoutError" ? "Cloud metadata timed out. Check available peers and retry." : error.message }); }
+        finally { cloudPreparing = false; }
+    });
     socket.emit("serverCapabilities", SERVER_CAPABILITIES);
     socket.on("createRoom", data => {
         const room = cleanText(data.room);

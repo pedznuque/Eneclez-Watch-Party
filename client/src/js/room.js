@@ -62,6 +62,7 @@ const browserReloadButton = document.getElementById("browserReload");
 const browseBilibiliButton = document.getElementById("browseBilibili");
 const browseYoutubeButton = document.getElementById("browseYoutube");
 const browseDailymotionButton = document.getElementById("browseDailymotion");
+const browseWebtorButton = document.getElementById("browseWebtor");
 const browseFacebookButton = document.getElementById("browseFacebook");
 const browseDriveButton = document.getElementById("browseDrive");
 const driveLinkControls = document.getElementById("driveLinkControls");
@@ -97,6 +98,9 @@ let queueItems = [];
 let currentHost = "";
 let controllerUsers = new Set();
 let lastPlaybackState = null;
+let lastRemotePlaybackState = null;
+let lastLocalTorrentState = null;
+let pendingTorrentControl = false;
 let applyingRemotePlayback = false;
 let selectedVideoUrl = "";
 const torrentPlayerLinks = new Map();
@@ -104,6 +108,15 @@ let torrentLoadGeneration = 0;
 let pendingTorrentShareCancel = null;
 
 function isTorrentPlayerUrl(url) { return torrentPlayerLinks.has(url); }
+function isManagedStreamPlayer() { return isTorrentPlayerUrl(playerWebview.src); }
+function streamReadinessLabel(state) {
+    if(state.phase==="error")return "Playback error";
+    if(state.phase==="checking")return "Checking video + audio";
+    if(state.phase==="gesture")return "Ready · Click Play";
+    if(state.buffering)return `Buffering ${(state.bufferedSeconds||0).toFixed(1)} / ${Math.ceil(state.bufferTarget||8)}s`;
+    if(state.waitingForRoom)return "Ready · Waiting for room";
+    return state.paused?"Video ready":"Playing";
+}
 let driveFallbackAttemptedFor = "";
 let driveConfirmAttemptedFor = "";
 let facebookFallbackAttemptedFor = "";
@@ -169,6 +182,7 @@ const VOICE_RTC_CONFIG = {
 const BILIBILI_HOME = "https://www.bilibili.tv/en";
 const YOUTUBE_HOME = "https://www.youtube.com/";
 const DAILYMOTION_HOME = "https://www.dailymotion.com/";
+const WEBTOR_HOME = 'https://webtor.io/';
 const FACEBOOK_HOME = "https://www.facebook.com/watch/";
 const DRIVE_HOME = "https://drive.google.com/";
 let activeBrowserHome = BILIBILI_HOME;
@@ -669,7 +683,7 @@ function scheduleBrowserWebviewSizeSync() {
 function normalizedVideoIdentity(url) {
     if (isTorrentPlayerUrl(url)) return normalizedVideoIdentity(torrentPlayerLinks.get(url));
     const torrent = parseTorrentLink(url);
-    if (torrent) return `torrent:${torrent.hash}:${torrent.fileIndex ?? "default"}`;
+    if (torrent) return `torrent:${torrent.hash}:${torrent.fileIndex ?? "default"}:${torrent.cloud ? "cloud" : "local"}`;
     try {
         const parsed = new URL(url);
         const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
@@ -712,6 +726,7 @@ function isSameVideoUrl(firstUrl, secondUrl) {
 
 async function installPlayerEndGuard() {
     if (!playerWebview || playerWebview.src === "about:blank") return;
+    if(isWebtorUrl(playerWebview.src))return;
     if (isTorrentPlayerUrl(playerWebview.src)) return;
     if (isLightYoutubePlayerUrl(playerWebview.src)) return;
 
@@ -1052,7 +1067,7 @@ async function isPlayerReady() {
                 }
 
                 const findVideo = root => {
-                    const directVideo = root.querySelector("video");
+                    const directVideo = root.querySelector(".wt-player video,video.player") || root.querySelector("video");
                     if (directVideo) return directVideo;
 
                     for (const frame of root.querySelectorAll("iframe")) {
@@ -1296,6 +1311,21 @@ async function checkFacebookPlayerFailure() {
 function waitForPlayerReady() {
     clearInterval(playerReadyCheckTimer);
     clearPlayerAutoplayNudges();
+    if(isWebtorUrl(playerWebview.src)){
+        const expected=playerWebview.src;let checking=false,checks=0;
+        setPlayerLoading(lastPlayerReadyUrl!==expected,'Preparing Webtor video');
+        const timer=setInterval(async()=>{
+            if(checking||playerWebview.src!==expected)return;checking=true;
+            try{
+                const state=await installWebtorPage(playerWebview,'player');
+                if(playerWebview.src!==expected||playerReadyCheckTimer!==timer)return;
+                if(state?.error){setPlayerError(state.error);return;}
+                if(state?.needsInteraction){setPlayerLoading(false);setMediaStatus('Complete Webtor sign-in in the player','');}
+                if(state?.ready){clearInterval(timer);playerReadyCheckTimer=null;lastPlayerReadyUrl=expected;setPlayerLoading(false);setMediaStatus('Ready','is-online');await applyPlayerVolume(selectedVolume);}
+                else if(++checks>=240){clearInterval(timer);playerReadyCheckTimer=null;setPlayerLoading(false);setMediaStatus('Webtor is not ready. Retry or check its page.','is-offline');}
+            }finally{checking=false;}
+        },500);playerReadyCheckTimer=timer;return;
+    }
     if (isTorrentPlayerUrl(playerWebview.src)) {
         const expected = playerWebview.src;
         let attempts = 0;
@@ -1313,7 +1343,7 @@ function waitForPlayerReady() {
             if (state?.error || !state?.ready) { setPlayerError(state?.error || "Torrent buffering timed out. Check available peers and retry."); return; }
             setMediaStatus("Torrent ready", "is-online");
             applyPlayerVolume(selectedVolume);
-            if (lastPlaybackState) applyPlaybackState(lastPlaybackState);
+            if (lastRemotePlaybackState || lastPlaybackState) applyPlaybackState(lastRemotePlaybackState || lastPlaybackState);
             } finally { checking = false; }
         }, 250);
         playerReadyCheckTimer = timer;
@@ -1513,6 +1543,7 @@ function syncPlayerWebviewSize() {
 function syncBrowserWebviewSize() {
     if (driveBrowserPromotedToPlayer) return;
     syncWebviewToPane(browserPane, browserWebview);
+
 }
 
 function syncAllWebviewSizes() {
@@ -2088,7 +2119,7 @@ function isGoogleDriveUrl(url) {
 
 function isSupportedMediaUrl(url) {
     if (parseTorrentLink(url) || isTorrentPlayerUrl(url)) return true;
-    return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url) || isGoogleDriveApiStreamUrl(url);
+    return isBilibiliUrl(url) || isYoutubeUrl(url) || isDailymotionUrl(url) || isFacebookUrl(url) || isGoogleDriveUrl(url) || isGoogleDriveApiStreamUrl(url) || isWebtorUrl(url);
 }
 
 function isBrowserAuthUrl(url) {
@@ -2321,7 +2352,7 @@ function isFacebookEmbedUrl(url) {
 
 function isSupportedVideoUrl(url) {
     if (parseTorrentLink(url)) return true;
-    return isBilibiliVideoUrl(url) || isYoutubeVideoUrl(url) || isDailymotionVideoUrl(url) || isFacebookVideoUrl(url) || isGoogleDriveVideoUrl(url) || isGoogleDriveApiStreamUrl(url);
+    return isBilibiliVideoUrl(url) || isYoutubeVideoUrl(url) || isDailymotionVideoUrl(url) || isFacebookVideoUrl(url) || isGoogleDriveVideoUrl(url) || isGoogleDriveApiStreamUrl(url) || isWebtorVideoUrl(url);
 }
 
 function getYoutubeVideoId(url) {
@@ -2481,8 +2512,16 @@ function getPlayerUrl(url) {
 
 async function loadPlayerWebviewUrl(url) {
     const generation = ++torrentLoadGeneration;
+    updateWebtorSubtitleUi(null);
+    // Local playback must become visible before the room server acknowledges
+    // sharing. Older servers may reject a provider that this client can play.
+    setPlayerEmptyState(false);
+    syncPlayerWebviewSize();
     const torrent = parseTorrentLink(url);
+    lastLocalTorrentState = null;
+    lastRemotePlaybackState = null;
     playerPane.classList.toggle("is-torrent-player", Boolean(torrent));
+    playerPane.classList.toggle('is-webtor-player',isWebtorVideoUrl(url));
     if (torrent) {
         restoreDriveBrowserToBrowserPane();
         playerPane.classList.remove("is-drive-player");
@@ -2490,13 +2529,13 @@ async function loadPlayerWebviewUrl(url) {
         setPlayerEmptyState(false);
         setPlayerLoading(true, "Loading torrent metadata");
         try {
-            let result = await window.watchParty?.prepareTorrent({ magnet: url, fileIndex: torrent.fileIndex });
+            let result = await prepareTorrentSource({ magnet: url, fileIndex: torrent.fileIndex });
             if (!result?.ok) throw new Error(result?.error || "Torrent streaming requires the updated desktop app.");
             if (generation !== torrentLoadGeneration) return;
             if (!result.playerUrl) {
                 const file = [...result.files].sort((first, second) => second.length - first.length)[0];
                 if (!file) throw new Error("No supported video files found in this torrent.");
-                result = await window.watchParty.prepareTorrent({ magnet: url, fileIndex: file.index });
+                result = await prepareTorrentSource({ magnet: url, fileIndex: file.index });
             }
             if (generation !== torrentLoadGeneration) return;
             if (!result.ok || !result.playerUrl) throw new Error(result.error || "Could not prepare torrent player");
@@ -2657,7 +2696,7 @@ function loadYoutubeEmbedFallbackPlayer() {
 }
 
 function supportedSitesLabel() {
-    return "Bilibili, YouTube, Dailymotion, Facebook, or Google Drive";
+    return "Bilibili, YouTube, Dailymotion, Webtor, Facebook, Google Drive, or torrent";
 }
 
 function getSupportedMediaUrl() {
@@ -2688,10 +2727,11 @@ function getSupportedMediaUrl() {
     }
 }
 
-function shareTorrentWithRoom(request) {
+function shareTorrentWithRoom(request, provider = "Torrent") {
     pendingTorrentShareCancel?.();
+    const retryAction="choose Play in room again";
     if (socket.connected === false) {
-        addSystemMessage("Torrent is playing locally. Reconnect to the room server, then choose Play in room again to share it.");
+        addSystemMessage(`${provider} is playing locally. Reconnect to the room server, then ${retryAction} to share it.`);
         return;
     }
     let done = false, timer;
@@ -2705,15 +2745,18 @@ function shareTorrentWithRoom(request) {
     };
     const report = message => { cleanup(); if (selectedVideoUrl === request.url) addSystemMessage(message); };
     const onShared = media => { if (media?.url && isSameVideoUrl(media.url, request.url)) cleanup(); };
-    const onDisconnect = () => report("Connection lost before torrent sharing was confirmed. Reconnect, then choose Play in room again.");
+    const onDisconnect = () => report(`Connection lost before ${provider.toLowerCase()} sharing was confirmed. Reconnect, then ${retryAction}.`);
     pendingTorrentShareCancel = cleanup;
     socket.on("mediaLoaded", onShared);
     socket.on("disconnect", onDisconnect);
-    timer = setTimeout(() => report("Torrent is playing locally, but the room server has not confirmed sharing. Update or restart the room server, then choose Play in room again."), 7000);
+    timer = setTimeout(() => report(`${provider} is playing locally, but the room server has not confirmed sharing. Update or restart the room server, then ${retryAction}.`), 7000);
     socket.emit("loadMedia", request, response => {
         if (done) return;
         if (response?.ok) cleanup();
-        else if (response?.ok === false) report(response.message || "The room server rejected this torrent. Check room permissions and server support.");
+        else if (response?.ok === false) {
+            const reason = response.message || `The room server rejected this ${provider.toLowerCase()}. Check room permissions and server support.`;
+            report(reason);
+        }
     });
 }
 
@@ -2823,6 +2866,51 @@ function navigateBrowserTo(url) {
     } catch (error) { failed(error); }
 }
 
+async function installWebtorPage(webview,role) {
+    try{
+        const current=webview.getURL?.()||webview.src;
+        if(!isWebtorUrl(current))return null;
+        const state=await webview.executeJavaScript(`(${webtorPageRuntime.toString()})(${JSON.stringify(role)})`);
+        if(role==='player'&&state?.ready)return await webview.executeJavaScript(`(${webtorControlRuntime.toString()})()`);
+        return state;
+    }catch{return null;}
+}
+
+function closeWebtorSubtitleMenu(){
+    const menu=document.getElementById('webtorSubtitleMenu');if(menu)menu.hidden=true;
+    document.getElementById('webtorSubtitleToggle')?.setAttribute('aria-expanded','false');
+}
+function updateWebtorSubtitleUi(state){
+    const control=document.getElementById('webtorSubtitleControl'),menu=document.getElementById('webtorSubtitleMenu');
+    if(!control||!menu)return;
+    control.hidden=state?.provider!=='webtor';
+    if(control.hidden){closeWebtorSubtitleMenu();return;}
+    const choices=state.subtitles||[],signature=JSON.stringify([choices,state.subtitleSettings]);
+    if(menu.dataset.signature===signature)return;
+    menu.dataset.signature=signature;menu.replaceChildren();
+    for(const choice of choices){
+        const button=document.createElement('button');button.type='button';button.dataset.subtitleId=choice.id;button.textContent=choice.label;
+        button.disabled=Boolean(choice.disabled);button.setAttribute('role','menuitemradio');button.setAttribute('aria-checked',String(Boolean(choice.selected)));menu.append(button);
+    }
+    if(!choices.some(choice=>choice.id!=='none')){const info=document.createElement('button');info.type='button';info.disabled=true;info.textContent='No subtitle tracks loaded yet';menu.append(info);}
+    if(state.subtitleSettings){const more=document.createElement('button');more.type='button';more.dataset.subtitleSettings='true';more.textContent='More subtitle settings…';more.setAttribute('role','menuitem');menu.append(more);}
+}
+document.getElementById('webtorSubtitleToggle')?.addEventListener('click',async()=>{
+    updateWebtorSubtitleUi(await readPlaybackState());
+    const menu=document.getElementById('webtorSubtitleMenu');menu.hidden=!menu.hidden;
+    document.getElementById('webtorSubtitleToggle').setAttribute('aria-expanded',String(!menu.hidden));
+});
+document.getElementById('webtorSubtitleMenu')?.addEventListener('click',async event=>{
+    const button=event.target.closest('button');if(!button||button.disabled)return;
+    closeWebtorSubtitleMenu();
+    try{
+        const script=button.dataset.subtitleSettings?'window.watchPartyPlayer?.showSubtitleSettings()':`window.watchPartyPlayer?.selectSubtitle(${JSON.stringify(button.dataset.subtitleId)})`;
+        updateWebtorSubtitleUi(await playerWebview.executeJavaScript(script));
+    }catch{setMediaStatus('Could not change Webtor subtitles. Try again.','is-offline');}
+});
+document.addEventListener('click',event=>{if(!event.target.closest?.('#webtorSubtitleControl'))closeWebtorSubtitleMenu();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')closeWebtorSubtitleMenu();});
+
 function resetBrowserToHome() {
     clearTimeout(resetBrowserTimer);
 
@@ -2842,6 +2930,7 @@ function setBrowserSite(site, options = {}) {
         bilibili: BILIBILI_HOME,
         youtube: YOUTUBE_HOME,
         dailymotion: DAILYMOTION_HOME,
+        webtor: WEBTOR_HOME,
         facebook: FACEBOOK_HOME,
         drive: DRIVE_HOME,
         torrent: "about:blank"
@@ -2858,6 +2947,8 @@ function setBrowserSite(site, options = {}) {
     browseBilibiliButton.classList.toggle("is-active", activeBrowserHome === BILIBILI_HOME);
     browseYoutubeButton.classList.toggle("is-active", activeBrowserHome === YOUTUBE_HOME);
     browseDailymotionButton.classList.toggle("is-active", activeBrowserHome === DAILYMOTION_HOME);
+    browseWebtorButton.classList.toggle('is-active',activeBrowserHome===WEBTOR_HOME);
+    scheduleBrowserWebviewSizeSync();
     browseFacebookButton.classList.toggle("is-active", activeBrowserHome === FACEBOOK_HOME);
     browseDriveButton?.classList.toggle("is-active", activeBrowserHome === DRIVE_HOME);
     browserPane?.classList.toggle("is-drive-browser", activeBrowserHome === DRIVE_HOME);
@@ -3159,6 +3250,7 @@ async function handleBrowserVideoSelection(url, titleHint = "") {
             }
 
             selectedVideoUrl = playerUrl;
+            setPlayingTitle(titleHint || titleFromUrl(playerUrl));
             mediaUrlInput.value = playerUrl;
             loadPlayerWebviewUrl(playerUrl);
             setMediaStatus("Loading", "");
@@ -3210,9 +3302,11 @@ async function handleBrowserVideoSelection(url, titleHint = "") {
 }
 
 async function keepLinksInside(webview, targetMode = "self") {
+    if(isWebtorUrl(webview.getURL?.()||webview.src))return;
     try {
         await webview.executeJavaScript(`
             (() => {
+                if(location.protocol==='https:'&&['webtor.io','www.webtor.io'].includes(location.hostname))return;
                 const targetMode = ${JSON.stringify(targetMode)};
 
                 const isVideoUrl = url => {
@@ -3703,9 +3797,14 @@ function getQueueUrl() {
 }
 
 async function disableBrowserPlayback() {
+    if(isWebtorUrl(browserWebview.getURL?.()||browserWebview.src)){await installWebtorPage(browserWebview,'browser');return;}
     try {
         await browserWebview.executeJavaScript(`
             (() => {
+                // A queued cleanup can execute after a new page commits.
+                // Webtor must run its own codec probes and start its movie
+                // before the playback detector hands that selection upwards.
+                if(location.protocol==='https:'&&['webtor.io','www.webtor.io'].includes(location.hostname))return;
                 const installBrowserCss = () => {
                     if (document.getElementById("watch-party-browser-clean")) return;
 
@@ -3886,6 +3985,7 @@ async function cleanFacebookPlayer() {
 }
 
 async function cleanPlayerView() {
+    if(isWebtorUrl(playerWebview.src))return Boolean(await installWebtorPage(playerWebview,'player'));
     if (isTorrentPlayerUrl(playerWebview.src)) return true;
     if (isFacebookUrl(playerWebview.src)) return cleanFacebookPlayer();
     if (playerWebview.src === "about:blank") {
@@ -4481,7 +4581,7 @@ function updatePlaybackTime(state) {
     const currentTime = Number(state?.currentTime) || 0;
     const duration = Number(state?.duration) || 0;
     const displayText = `${formatTime(currentTime)} / ${formatTime(duration)}`;
-    const paused = state?.paused !== false;
+    const paused = (typeof state?.requestedPaused === "boolean" ? state.requestedPaused : state?.paused) !== false;
 
     if (lastPlaybackDisplayText !== displayText) {
         lastPlaybackDisplayText = displayText;
@@ -4511,6 +4611,7 @@ function updatePlaybackTime(state) {
 }
 
 async function applyPlayerQuality(quality, options = {}) {
+    if(isWebtorUrl(playerWebview.src))return false;
     const requestedQuality = String(quality || "auto");
 
     if (playerWebview.src === "about:blank") {
@@ -4676,7 +4777,7 @@ function updateHostControls() {
     playPauseButton.disabled = !canControl || !hasMedia;
     stopPlayerButton.disabled = !canControl || !hasMedia;
     playbackProgressEl.disabled = !canControl || !hasMedia;
-    qualitySelectEl.disabled = !canControl || !hasMedia;
+    qualitySelectEl.disabled = !canControl || !hasMedia || isWebtorUrl(playerWebview.src);
     window.refreshTorrentControls?.();
 }
 
@@ -4686,7 +4787,7 @@ async function readPlaybackState() {
             (() => {
                 if (window.watchPartyPlayer?.getState) {
                     const state = window.watchPartyPlayer.getState();
-                    if (state?.ready || state?.duration > 0 || state?.currentTime > 0) {
+                    if (state?.provider === "torrent" || state?.ready || state?.duration > 0 || state?.currentTime > 0) {
                         return {
                             currentTime: Number(state.currentTime) || 0,
                             duration: Number(state.duration) || 0,
@@ -4695,15 +4796,22 @@ async function readPlaybackState() {
                             ready: state.ready,
                             seeking: Boolean(state.seeking),
                             buffering: Boolean(state.buffering),
+                            provider: state.provider,
+                            requestedPaused: state.requestedPaused,
+                            waitingForRoom: Boolean(state.waitingForRoom),
+                            phase: state.phase,
+                            bufferedSeconds: state.bufferedSeconds,
+                            bufferTarget: state.bufferTarget,
                             videoWidth: Number(state.videoWidth) || 0,
                             videoHeight: Number(state.videoHeight) || 0,
+                            subtitles:state.subtitles,subtitleSettings:state.subtitleSettings,error:state.error,
                             manualQuality: window.watchPartyPlayer.getQualityCapabilities?.().manual
                         };
                     }
                 }
 
                 const findVideo = root => {
-                    const directVideo = root.querySelector("video");
+                    const directVideo = root.querySelector(".wt-player video,video.player") || root.querySelector("video");
                     if (directVideo) return directVideo;
 
                     for (const frame of root.querySelectorAll("iframe")) {
@@ -4775,6 +4883,7 @@ async function readPlaybackState() {
                 };
             })()
         `);
+        updateWebtorSubtitleUi(state);
         const facebook = isFacebookUrl(playerWebview.src);
         const resolution = document.getElementById("actualQuality");
         if (resolution) {
@@ -4810,7 +4919,7 @@ async function setPlayerPaused(shouldPause) {
                 }
 
                 const findVideo = root => {
-                    const directVideo = root.querySelector("video");
+                    const directVideo = root.querySelector(".wt-player video,video.player") || root.querySelector("video");
                     if (directVideo) return directVideo;
 
                     for (const frame of root.querySelectorAll("iframe")) {
@@ -4878,9 +4987,12 @@ async function applyPlaybackState(state) {
     try {
         const liveTargetTime = getSyncedPlaybackTime(state);
         const shouldPause = Boolean(state.paused);
-
         const result = await playerWebview.executeJavaScript(`
             (async () => {
+                if (window.watchPartyPlayer?.syncTo) {
+                    await window.watchPartyPlayer.syncTo(${JSON.stringify(liveTargetTime)}, ${JSON.stringify(typeof state.requestedPaused === "boolean" ? state.requestedPaused : shouldPause)}, { paused: ${JSON.stringify(shouldPause)}, buffering: ${JSON.stringify(Boolean(state.buffering))} });
+                    return "torrent-sync";
+                }
                 if (window.watchPartyPlayer?.seekTo) {
                     const playerState = window.watchPartyPlayer.getState?.() || {};
                     const currentTime = Number(playerState.currentTime) || 0;
@@ -4905,7 +5017,7 @@ async function applyPlaybackState(state) {
                 }
 
                 const findVideo = root => {
-                    const directVideo = root.querySelector("video");
+                    const directVideo = root.querySelector(".wt-player video,video.player") || root.querySelector("video");
                     if (directVideo) return directVideo;
 
                     for (const frame of root.querySelectorAll("iframe")) {
@@ -4976,7 +5088,9 @@ async function emitHostPlaybackState(forcePaused = null) {
         room: roomCode,
         currentTime: state.currentTime,
         duration: state.duration,
-        paused: forcePaused === null ? state.paused : forcePaused,
+        paused: state.provider === "torrent" || forcePaused === null ? state.paused : forcePaused,
+        requestedPaused: state.requestedPaused,
+        buffering: state.buffering,
         quality: selectedQuality
     });
 }
@@ -5323,13 +5437,17 @@ socket.on("mediaStopped", async data => {
 
     restoreDriveBrowserToBrowserPane();
     playerWebview.src = "about:blank";
-    playerPane.classList.remove("is-drive-player", "is-torrent-player");
+    playerPane.classList.remove("is-drive-player", "is-torrent-player", "is-webtor-player");
+    updateWebtorSubtitleUi(null);
     selectedVideoUrl = "";
     setPlayingTitle("");
     driveConfirmAttemptedFor = "";
     lastLoadedMediaToken = "";
     lastPlayerReadyUrl = "";
     lastPlaybackState = null;
+    lastLocalTorrentState = null;
+    lastRemotePlaybackState = null;
+    pendingTorrentControl = false;
     handlingPlaybackEnd = false;
     mediaUrlInput.value = activeBrowserHome;
 
@@ -5359,7 +5477,8 @@ socket.on("mediaPlayback", state => {
         ...state,
         updatedAt: Number(state?.updatedAt) || Date.now()
     });
-    const displayState = getDisplayPlaybackState(lastPlaybackState);
+    if (state?.updatedBy !== username) lastRemotePlaybackState = lastPlaybackState;
+    const displayState = isManagedStreamPlayer() ? lastLocalTorrentState || { ...lastPlaybackState, currentTime: 0, paused: true, buffering: true } : getDisplayPlaybackState(lastPlaybackState);
     updatePlaybackTime(displayState);
     updateQueueCountdown(displayState);
 
@@ -6189,7 +6308,7 @@ playerWebview.addEventListener("did-fail-load", event => {
 
 playerWebview.addEventListener("will-navigate", event => {
     const targetUrl = event.url || "";
-
+    if(isWebtorUrl(playerWebview.src)&&isWebtorUrl(targetUrl)&&!isWebtorVideoUrl(targetUrl))return;
     if (isYoutubePlayerShellUrl(targetUrl)) {
         return;
     }
@@ -6215,7 +6334,6 @@ playerWebview.addEventListener("will-navigate", event => {
 
 playerWebview.addEventListener("new-window", event => {
     event.preventDefault();
-
     if (!event.url || !isSupportedMediaUrl(event.url)) return;
 
     if (
@@ -6312,6 +6430,7 @@ browserWebview.addEventListener("did-fail-load", event => {
 
 browserWebview.addEventListener("did-navigate", event => {
     const targetUrl = event.url || browserWebview.getURL?.() || browserWebview.src || "";
+    if(isWebtorUrl(targetUrl))return;
 
     if (activeBrowserHome === DRIVE_HOME) {
         installDriveBrowserActions();
@@ -6326,6 +6445,7 @@ browserWebview.addEventListener("did-navigate", event => {
 
 browserWebview.addEventListener("did-navigate-in-page", event => {
     const targetUrl = event.url || browserWebview.getURL?.() || browserWebview.src || "";
+    if(isWebtorUrl(targetUrl)){installWebtorPage(browserWebview,'browser');return;}
 
     if (activeBrowserHome === DRIVE_HOME) {
         installDriveBrowserActions();
@@ -6343,6 +6463,7 @@ browserWebview.addEventListener("did-navigate-in-page", event => {
 
 browserWebview.addEventListener("will-navigate", event => {
     const targetUrl = event.url || "";
+    if(isWebtorUrl(targetUrl))return;
 
     if (!isAllowedBrowserUrl(targetUrl)) {
         event.preventDefault();
@@ -6364,6 +6485,8 @@ browserWebview.addEventListener("new-window", event => {
     event.preventDefault();
 
     if (!event.url) return;
+    // The main process replays this native POST in the same view. A second
+    // renderer navigation would abort it and replace the submission with GET.
 
     if (!isAllowedBrowserUrl(event.url)) {
         setMediaStatus("Unsupported site", "is-offline");
@@ -6402,12 +6525,13 @@ playPauseButton.onclick = async () => {
         return;
     }
 
-    const nextPaused = state ? !state.paused : false;
+    const nextPaused = state?.phase === "gesture" ? false : state ? !(state.requestedPaused ?? state.paused) : false;
+    if (state?.provider === "torrent") pendingTorrentControl = true;
 
     try {
         const nextState = await setPlayerPaused(nextPaused);
 
-        if (!nextPaused && (!nextState || nextState.paused)) {
+        if (!nextPaused && (!nextState || nextState.paused) && nextState?.provider !== "torrent" && nextState?.provider !== 'webtor') {
             try {
                 const rect = playerWebview.getBoundingClientRect();
                 playerWebview.sendInputEvent?.({ type: "mouseMove", x: Math.round(rect.width / 2), y: Math.round(rect.height / 2) });
@@ -6419,7 +6543,7 @@ playPauseButton.onclick = async () => {
         if (nextState) {
             lastPlaybackState = withLocalSyncState({
                 ...nextState,
-                paused: nextPaused,
+                paused: nextState.provider === "torrent" ? nextState.paused : nextPaused,
                 updatedAt: Date.now()
             });
             updatePlaybackTime(getDisplayPlaybackState(lastPlaybackState));
@@ -6468,6 +6592,7 @@ async function commitPlaybackSeek() {
     if (!canControlPlayer() || seekCommitInProgress) return;
 
     seekCommitInProgress = true;
+    if (isManagedStreamPlayer()) pendingTorrentControl = true;
     const requestedProgress = Number(playbackProgressEl.value);
 
     try {
@@ -6488,7 +6613,7 @@ async function commitPlaybackSeek() {
         );
 
         const shouldResume = state
-            ? !Boolean(state.paused)
+            ? !Boolean(state.requestedPaused ?? state.paused)
             : seekWasPlaying;
 
         const result = await playerWebview.executeJavaScript(`
@@ -6501,7 +6626,7 @@ async function commitPlaybackSeek() {
                 }
 
                 const findVideo = root => {
-                    const directVideo = root.querySelector("video");
+                    const directVideo = root.querySelector(".wt-player video,video.player") || root.querySelector("video");
                     if (directVideo) return directVideo;
 
                     for (const frame of root.querySelectorAll("iframe")) {
@@ -6581,6 +6706,8 @@ async function commitPlaybackSeek() {
                 username,
                 currentTime: result.currentTime,
                 paused: result.paused,
+                requestedPaused: result.requestedPaused,
+                buffering: result.buffering,
                 duration: result.duration,
                 quality: selectedQuality,
                 updatedAt: Date.now()
@@ -6658,6 +6785,7 @@ browseYoutubeButton.onclick = () => {
 browseDailymotionButton.onclick = () => {
     setBrowserSite("dailymotion");
 };
+browseWebtorButton.onclick=()=>setBrowserSite('webtor');
 
 browseFacebookButton.onclick = () => {
     setBrowserSite("facebook");
@@ -6862,10 +6990,37 @@ setInterval(() => {
 setInterval(() => {
     if (!lastPlaybackState || isSeekingPlayback) return;
 
-    const displayState = getDisplayPlaybackState(lastPlaybackState);
+    const displayState = isManagedStreamPlayer() && lastLocalTorrentState ? lastLocalTorrentState : getDisplayPlaybackState(lastPlaybackState);
 
     updatePlaybackTime(displayState);
     updateQueueCountdown(displayState);
+}, 500);
+
+let torrentReadinessBusy = false;
+setInterval(async () => {
+    const expectedUrl = playerWebview.src;
+    if (!isManagedStreamPlayer()) { const badge = document.getElementById("playbackReadiness"); if (badge) badge.hidden = true; return; }
+    if (isSeekingPlayback || seekCommitInProgress || torrentReadinessBusy) return;
+    torrentReadinessBusy = true;
+    try {
+        const state = await readPlaybackState();
+        if (playerWebview.src !== expectedUrl || state?.provider !== "torrent") return;
+        lastLocalTorrentState = state;
+        updatePlaybackTime(state);
+        const badge = document.getElementById("playbackReadiness");
+        if (badge) {
+            badge.hidden = false;
+            badge.dataset.state = state.ready ? "ready" : "buffering";
+            badge.textContent = streamReadinessLabel(state);
+        }
+        if (!canControlPlayer() || applyingRemotePlayback || state.waitingForRoom) return;
+        const changed = isHostUser() && (lastPlaybackState?.paused !== state.paused || Boolean(lastPlaybackState?.buffering) !== state.buffering);
+        if (changed || (pendingTorrentControl && state.ready)) {
+            lastPlaybackState = withLocalSyncState({ ...state, updatedAt: Date.now() });
+            socket.emit("mediaControl", { room: roomCode, currentTime: state.currentTime, duration: state.duration, paused: state.paused, requestedPaused: state.requestedPaused, buffering: state.buffering, quality: selectedQuality });
+            if (state.ready) pendingTorrentControl = false;
+        }
+    } finally { torrentReadinessBusy = false; }
 }, 500);
 
 setInterval(async () => {
@@ -6875,7 +7030,7 @@ setInterval(async () => {
 
     // Explicit controls send their intended position immediately. Periodic
     // updates must wait until the player has actually reached that position.
-    if (applyingRemotePlayback || isSeekingPlayback || seekCommitInProgress || state?.seeking || state?.buffering || state?.ready === false) return;
+    if (applyingRemotePlayback || isSeekingPlayback || seekCommitInProgress || state?.seeking || state?.buffering || state?.waitingForRoom || state?.ready === false) return;
 
     if (state?.ended) {
         handlePlaybackEnded();
@@ -6894,6 +7049,8 @@ setInterval(async () => {
             currentTime: state.currentTime,
             duration: state.duration,
             paused: state.paused,
+            requestedPaused: state.requestedPaused,
+            buffering: state.buffering,
             quality: selectedQuality
         });
     }

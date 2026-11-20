@@ -38,7 +38,7 @@
                 </div>
 
                 <div class="browser-controls is-hidden-control">
-                    <input id="mediaUrl" placeholder="Paste a Bilibili, YouTube, Dailymotion, Facebook, or Drive link">
+                    <input id="mediaUrl" placeholder="Paste a video link from a provider below">
                     <button id="loadMedia" class="primary-button">Load Player</button>
                     <button id="addToQueue" class="ghost-button">Queue</button>
                 </div>
@@ -51,7 +51,7 @@
                             partition="persist:eneclez-browser"
                             preload="./js/youtube-adblock-preload.js"
                             webpreferences="contextIsolation=false"
-                            allowpopups="false">
+                            allowpopups="true">
                         </webview>
 
                         <div id="playerEmptyState" class="player-empty-state">
@@ -61,7 +61,7 @@
                             </div>
                             <p class="empty-kicker">Your private theater</p>
                             <h3>Select a video to start watching</h3>
-                            <p>Browse Bilibili, YouTube, Dailymotion, Facebook, or Drive below, then choose a supported video for everyone in the room.</p>
+                            <p>Browse a provider below, then choose a supported video for everyone in the room.</p>
                         </div>
 
                         <div id="playerLoadingState" class="player-loading-state" hidden>
@@ -91,11 +91,15 @@
                                 <path class="fullscreen-collapse" d="M9 3v5a1 1 0 0 1-1 1H3M15 3v5a1 1 0 0 0 1 1h5M9 21v-5a1 1 0 0 0-1-1H3M15 21v-5a1 1 0 0 1 1-1h5" />
                             </svg>
                         </button>
+                        <div id="webtorSubtitleControl" class="webtor-subtitle-control" hidden>
+                            <button id="webtorSubtitleToggle" class="ghost-button" type="button" aria-haspopup="menu" aria-expanded="false">Subtitles</button>
+                            <div id="webtorSubtitleMenu" class="webtor-subtitle-menu" role="menu" hidden></div>
+                        </div>
                     </div>
 
                     <div id="playerControls" class="player-controls">
                         <div id="nowPlaying" class="now-playing" hidden>
-                            <div class="now-playing-copy"><span>Now playing</span><strong id="playingTitle"></strong></div>
+                            <div class="now-playing-copy"><span>Now playing</span><strong id="playingTitle"></strong></div><span id="playbackReadiness" class="playback-readiness" hidden></span>
                             <button id="fullscreenControlsPin" class="fullscreen-controls-pin" type="button" aria-pressed="false" title="Keep fullscreen controls visible">Keep visible</button>
                         </div>
                         <div class="player-control-row">
@@ -241,6 +245,7 @@
                         <button id="browseBilibili" class="browser-site-option is-active" type="button">Bilibili</button>
                         <button id="browseYoutube" class="browser-site-option" type="button">YouTube</button>
                         <button id="browseDailymotion" class="browser-site-option" type="button">Dailymotion</button>
+                        <button id="browseWebtor" class="browser-site-option" type="button">Webtor</button>
                         <button id="browseFacebook" class="browser-site-option" type="button">Facebook</button>
                         <button id="browseDrive" class="browser-site-option" type="button">Drive</button>
                         <button id="browseTorrent" class="browser-site-option" type="button">Torrent</button>
@@ -274,6 +279,8 @@
                             <span id="torrentBadge" class="torrent-badge" data-state="idle">Not connected</span>
                         </div>
                         <div class="torrent-source-card">
+                            <label class="torrent-delivery" for="torrentDelivery">Stream from <select id="torrentDelivery"><option value="local">On this device</option><option value="cloud">Shared cloud cache</option></select></label>
+                            <p id="torrentDeliveryHint" class="torrent-file-info">Each viewer downloads from peers on their own device.</p>
                             <form id="torrentForm" class="torrent-source-form">
                                 <label for="torrentMagnet">Magnet link</label>
                                 <div class="torrent-input-row"><input id="torrentMagnet" placeholder="Paste a magnet link…" maxlength="2048" autocomplete="off" spellcheck="false"><button id="loadTorrent" class="primary-button" type="submit">Find videos</button></div>
@@ -413,7 +420,9 @@
 
     <script src="https://eneclez-watch-party.onrender.com/socket.io/socket.io.js"></script>
     <script src="js/torrent-links.js"></script>
+    <script src="js/webtor-provider.js"></script>
     <script src="js/room.js"></script>
+    <script src="js/cloud-torrents.js"></script>
     <script src="js/torrent-panel.js"></script>
 </body>
 </html>

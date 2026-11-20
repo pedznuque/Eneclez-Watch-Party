@@ -17,11 +17,21 @@
         #subtitleRetry { margin-top:6px; border:1px solid #43c6ac66; border-radius:7px; padding:5px 9px; color:#43c6ac; background:transparent; cursor:pointer; }
         #subtitleText { position:fixed; z-index:20; bottom:12%; left:8%; right:8%; text-align:center; white-space:pre-line; font-size:clamp(18px,3vw,32px); font-weight:bold; text-shadow:2px 2px 3px #000,-2px -2px 3px #000; pointer-events:none; }
         #status { position:fixed; z-index:10; bottom:12px; left:12px; right:12px; padding:10px 12px; background:#121720e8; border:1px solid #ffffff15; border-radius:10px; font-size:12px; line-height:1.6; pointer-events:none; }
+        #bufferingState { position:fixed; z-index:15; inset:0; display:grid; place-content:center; gap:12px; padding:24px; text-align:center; background:#080c12ef; pointer-events:none; }
+        #bufferTitle { font-size:20px; }
+        #bufferDetail { max-width:440px; color:#bac3d3; line-height:1.6; }
+        #bufferProgress { width:100%; height:7px; accent-color:#43c6ac; }
+        #bufferPlayButton { justify-self:center; padding:10px 16px; border:0; border-radius:9px; background:#43c6ac; color:#07110f; font-weight:bold; cursor:pointer; pointer-events:auto; }
+        #readinessBadge { position:fixed; z-index:25; left:12px; top:12px; max-width:calc(100% - 310px); padding:8px 10px; border-radius:8px; background:#121720e8; color:#f4b942; font-size:12px; }
+        #readinessBadge[data-state="ready"], #readinessBadge[data-state="playing"], #readinessBadge[data-state="waiting"] { color:#43c6ac; }
+        @media(max-width:540px) { #readinessBadge { top:auto; bottom:60px; max-width:calc(100% - 24px); } }
         [hidden] { display:none !important; }
     </style>
 </head>
 <body>
     <video id="video" playsinline preload="auto"></video>
+    <div id="bufferingState"><strong id="bufferTitle" role="status">Preparing video and audio…</strong><span id="bufferDetail">Checking playback compatibility.</span><progress id="bufferProgress" max="1" value="0" aria-label="Video buffer"></progress><button id="bufferPlayButton" type="button" hidden>Enable playback</button></div>
+    <span id="readinessBadge">Preparing video</span>
     <div id="subtitleControls">
         <label for="subtitleSelect">Subtitles <select id="subtitleSelect" aria-label="Subtitle track"><option value="off">Off</option></select></label>
         <span id="subtitleNotice" role="status"></span>

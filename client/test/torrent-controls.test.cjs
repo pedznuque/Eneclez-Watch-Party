@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const { parseTorrentLink, formatTorrentSpeed } = require("../src/js/torrent-links.js");
+const { playerFixture } = require("./player-fixture.cjs");
 const source = fs.readFileSync(path.join(__dirname, "../src/js/room.js"), "utf8").replace(/\r\n/g, "\n");
 const loadSource = source.slice(source.indexOf("async function loadPlayerWebviewUrl("), source.indexOf("function loadDriveFallbackPlayer("));
 const controlsSource = source.slice(source.indexOf("function updateHostControls("), source.indexOf("async function readPlaybackState("));
@@ -15,9 +16,12 @@ for (const role of ["host", "controller", "guest"]) {
         const controls = Array.from({ length: 4 }, () => ({ disabled: false }));
         const context = {
             torrentLoadGeneration: 0, parseTorrentLink, torrentPlayerLinks: new Map(),
+            isWebtorUrl:()=>false,isWebtorVideoUrl:()=>false,
+            updateWebtorSubtitleUi() {},
             window: { watchParty: { prepareTorrent: () => metadata } },
+            prepareTorrentSource: () => metadata,
             playerPane: { classList: { remove() {}, toggle() {} } }, playerWebview: { src: "about:blank" },
-            restoreDriveBrowserToBrowserPane() {}, clearPlayerError() {}, setPlayerEmptyState() {}, setPlayerLoading() {},
+            restoreDriveBrowserToBrowserPane() {}, clearPlayerError() {}, setPlayerEmptyState() {}, setPlayerLoading() {}, syncPlayerWebviewSize() {},
             setPlayerError: message => { throw new Error(message); },
             isHostUser: () => role === "host", canControlPlayer: () => role !== "guest", currentHost: "host",
             hostBadgeEl: {}, playPauseButton: controls[0], stopPlayerButton: controls[1], playbackProgressEl: controls[2], qualitySelectEl: controls[3]
@@ -36,25 +40,16 @@ for (const role of ["host", "controller", "guest"]) {
 }
 
 test("pause intent survives buffering and delayed canplay events", async () => {
-    const handlers = {};
-    const video = { readyState: 0, currentTime: 10, duration: 100, paused: false, buffered: { length: 0 },
-        addEventListener(name, handler) { handlers[name] = handler; }, pause() { this.paused = true; },
-        async play() { this.paused = false; } };
-    const context = { document: { getElementById: id => id === "video" ? video : {} },
-        window: { addEventListener() {} }, location: { href: "http://127.0.0.1/token/player?hash=test&file=0", search: "?hash=test&file=0" },
-        URL, URLSearchParams, Date, setInterval() {}, clearInterval() {} };
-    vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/js/torrent-player.js"), "utf8"), context);
-    const player = context.window.watchPartyPlayer;
+    const fixture = await playerFixture(), { player, video } = fixture;
     await player.setPaused(true);
     assert.equal(player.getState().paused, true);
     assert.equal(video.paused, true, "pause must cancel play intent immediately, even before metadata arrives");
-    video.readyState = 3;
-    handlers.canplay();
+    fixture.buffer(20); fixture.canplay();
     assert.equal(video.paused, true, "metadata/canplay must respect a pause requested during buffering");
     await player.setPaused(false);
     assert.equal(video.paused, false);
     await player.setPaused(true);
-    handlers.canplay();
+    fixture.canplay();
     assert.equal(video.paused, true);
 });
 

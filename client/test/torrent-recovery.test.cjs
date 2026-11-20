@@ -1,5 +1,6 @@
 const test = require("node:test"), assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const { formatTorrentSpeed } = require("../src/js/torrent-links");
+const { playerFixture } = require("./player-fixture.cjs");
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function captions(getMediaInfo) {
     const elements = new Map();
@@ -36,16 +37,13 @@ test("an explicit Off choice is not overwritten when late subtitle metadata arri
     assert.equal(selected.length, 1); assert.equal(selected[0], null);
 });
 test("temporary status failures do not stop playback or permanently disable polling", async () => {
-    let poll, request = 0, stopped = false;
-    const video = { readyState: 4, currentTime: 1, duration: 100, buffered: { length: 0 }, addEventListener() {} };
-    const context = { document: { getElementById: id => id === "video" ? video : {} }, window: { addEventListener() {} },
-        URL, URLSearchParams, AbortSignal, Date, formatTorrentSpeed, location: { href: "http://127.0.0.1/token/player?hash=test&file=0", search: "?hash=test&file=0" },
-        setInterval: fn => { poll = fn; return 1; }, clearInterval: () => { stopped = true; }, fetch: async () => {
+    let request = 0;
+    const fixture = await playerFixture({ fetchStatus: async () => {
             if (++request <= 3) throw new Error("temporarily offline");
             return request === 5 ? { status: 410 } : { ok: true, status: 200, json: async () => ({ peers: 1, downloadSpeed: 100000, files: [] }) };
-        } };
-    vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/js/torrent-player.js"), "utf8"), context);
+        } });
+    const poll = fixture.timers.get(1500);
     for (let index = 0; index < 4; index++) await poll();
-    assert.equal(stopped, false); assert.equal(context.window.watchPartyPlayer.getState().error, "");
-    await poll(); assert.equal(stopped, true); assert.match(context.window.watchPartyPlayer.getState().error, /transfer stopped/i);
+    assert.equal(fixture.timers.has(1500), true); assert.equal(fixture.player.getState().error, "");
+    await poll(); assert.equal(fixture.timers.has(1500), false); assert.match(fixture.player.getState().error, /transfer stopped/i);
 });
