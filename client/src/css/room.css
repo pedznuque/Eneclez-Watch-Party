@@ -5925,7 +5925,9 @@ html, body { max-width:100%; overflow-x:hidden; }
 .playback-readiness { max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--accent); font-size:11px; font-weight:700; }
 .playback-readiness[data-state="ready"] { color:var(--primary); }
 .playback-readiness[hidden] { display:none; }
-.player-container.is-webtor-player #playerWebview {pointer-events:auto!important;}
+/* Webtor's native prompts must receive real mouse input after loading.
+   Match the ready-player rule's specificity so it cannot disable this view. */
+.player-container.is-webtor-player:not(.is-empty):not(.is-loading) #playerWebview {pointer-events:auto!important;}
 .webtor-subtitle-control {position:absolute;top:12px;right:110px;z-index:30;pointer-events:auto;}
 .webtor-subtitle-control[hidden],.webtor-subtitle-menu[hidden] {display:none!important;}
 .webtor-subtitle-menu {position:absolute;top:calc(100% + 6px);right:0;display:grid;gap:4px;width:240px;max-width:65vw;max-height:280px;overflow:auto;padding:8px;border:1px solid var(--line);border-radius:12px;background:#151c28;box-shadow:0 10px 30px #0008;}

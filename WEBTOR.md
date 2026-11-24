@@ -75,3 +75,13 @@ An exhausted partial stream is buffering rather than the end of the movie.
 Validated with 50 tests, including an accelerated 25-minute session, and
 Electron UI checks for unexpected pause recovery. This does not establish the
 cause of a particular live provider interruption around twenty minutes.
+
+## v1.0.23 native speed popup clicks
+
+The generic ready-player CSS disabled pointer events with greater specificity
+than the Webtor exception. The exception now outranks that rule. Native speed
+popup X and Continue buttons receive real mouse input after playback is ready.
+
+The regression reproduces the unclickable X before the CSS fix, then clicks X
+and Continue using Chromium mouse input in the full Electron app, both normally
+and in fullscreen. This replaces the earlier programmatic-only dialog click.

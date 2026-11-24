@@ -127,9 +127,9 @@ app.whenReady().then(async () => {
             if(url.pathname==='/stream-video'){
                 assert.equal(request.method,'POST');streamPosts++;postOrigins.push(request.headers.get('origin'));
                 return new Response(`<div class="wt-player-stage"><div class="wt-player"><video autoplay controls data-duration="600" data-run-offset="0" data-session-seek-url="/session/seek" src="/movie.mp4"></video><div class="wt-player-controls"><div class="wt-player-progress" role="slider" aria-valuemax="600" style="height:12px;width:100%"></div><button>Native play controls</button></div></div></div>
-                    <dialog id="grace-cta"><button id="answerGrace">Continue watching</button></dialog><dialog id="subtitles"><button class="subtitle" data-id="none" data-default="true">Off</button><button class="subtitle" data-id="en" data-label="English" data-provider="Sidecar">English</button><button class="subtitle" data-id="es" data-label="Spanish" data-provider="MediaProbe">Spanish</button></dialog>
+                    <dialog id="grace-cta" style="width:260px;padding:30px;max-width:calc(100vw - 60px)"><button id="closeGrace" class="grace-cta-close" aria-label="Close" style="position:absolute;right:6px;top:6px;width:30px;height:30px">X</button><p>Continue at 5 Mbps or watch at 20 Mbps</p><button id="answerGrace" class="grace-cta-continue">Continue watching</button></dialog><dialog id="subtitles"><button class="subtitle" data-id="none" data-default="true">Off</button><button class="subtitle" data-id="en" data-label="English" data-provider="Sidecar">English</button><button class="subtitle" data-id="es" data-label="Spanish" data-provider="MediaProbe">Spanish</button></dialog>
                     <script>
-                    const video=document.querySelector('video');window.nativeSeekCalls=0;document.getElementById('answerGrace').onclick=()=>{document.getElementById('grace-cta').close();video.play()};
+                    const video=document.querySelector('video');window.nativeSeekCalls=0;for(const id of ['answerGrace','closeGrace'])document.getElementById(id).onclick=()=>{window.graceAnswer=id;document.getElementById('grace-cta').close();video.play()};
                     document.querySelector('.wt-player-progress').addEventListener('pointerdown',()=>document.addEventListener('pointerup',event=>{
                         const rect=document.querySelector('.wt-player-progress').getBoundingClientRect(),target=(event.clientX-rect.left)/rect.width*600;
                         const offset=Math.floor(target/30)*30;video.dataset.runOffset=offset;video.currentTime=target-offset;window.nativeSeekCalls++;
@@ -191,8 +191,24 @@ app.whenReady().then(async () => {
         await webtorPlayer("window.watchPartyPlayer.syncTo(window.watchPartyPlayer.getState().currentTime,false)");
         assert.equal(await webtorPlayer("document.querySelector('video').paused"),true,'room heartbeat must not answer a provider prompt');
         assert.equal(await webtorPlayer("getComputedStyle(document.getElementById('grace-cta')).display==='none'"),false,'provider prompt must survive video-only layout');
-        await webtorPlayer("document.getElementById('answerGrace').click()");
-        await until(async()=>await webtorPlayer("!document.querySelector('video').paused"),'provider prompt response resumes playback');
+        async function clickProviderButton(id){
+            await run("document.querySelector('.media-panel').scrollTop=0");
+            const point=await run(`(async()=>{const host=playerWebview.getBoundingClientRect();const child=await playerWebview.executeJavaScript(${JSON.stringify("(()=>{const r=document.getElementById('"+id+"').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()")});return {x:host.x+child.x,y:host.y+child.y}})()`);
+            win.webContents.debugger.attach('1.3');
+            try{for(const type of ['mousePressed','mouseReleased'])await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent',{type,...point,button:'left',clickCount:1});}finally{win.webContents.debugger.detach();}
+        }
+        await clickProviderButton('closeGrace');
+        await until(async()=>await webtorPlayer("window.graceAnswer==='closeGrace'&&!document.getElementById('grace-cta').open&&!document.querySelector('video').paused"),'real pointer clicks speed popup X and resumes playback',5000);
+        for(const fullscreen of [false,true]){
+            if(fullscreen)await run('playerPane.requestFullscreen()');
+            for(const id of ['closeGrace','answerGrace']){
+                await webtorPlayer("document.getElementById('grace-cta').showModal();document.querySelector('video').pause();window.graceAnswer=null");
+                await clickProviderButton(id);
+                await until(async()=>await webtorPlayer(`window.graceAnswer===${JSON.stringify(id)}&&!document.getElementById('grace-cta').open&&!document.querySelector('video').paused`),'real pointer clicks X/Continue and resumes in normal/fullscreen player',5000);
+            }
+            if(fullscreen)await run('document.exitFullscreen()');
+        }
+        console.log('PASS real mouse clicks speed-popup X and Continue in normal and fullscreen player');
         console.log('PASS provider grace prompt remains visible and room synchronization waits for the viewer response');
         await webtorPlayer("document.body.innerHTML='<div>Checking that you are not a robot</div><form action=\"/stream-video\" method=\"post\"><button>Stream</button></form>';window.challengeSubmits=0;document.addEventListener('submit',event=>{window.challengeSubmits++;event.preventDefault()})");
         for(let i=0;i<3;i++){
